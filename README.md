@@ -41,26 +41,26 @@ Import Private Key từ Ganache vào MetaMask.
 
 Tạo file .env ở thư mục gốc (nếu có sử dụng biến môi trường cho Pinata/Private Key).
 
-Bước 3: Triển khai Smart Contract
+### Bước 3: Triển khai Smart Contract
 Mở Terminal 1 và chạy lệnh deploy:
     npx hardhat compile
     npx hardhat run scripts/deploy.js --network localhost
 
-Bước 4: Khởi tạo dữ liệu mẫu (Seeding Data)
+### Bước 4: Khởi tạo dữ liệu mẫu (Seeding Data)
 Chạy script tự động đúc và niêm yết NFT mẫu để có dữ liệu test ngay lập tức mà không cần tốn giới hạn API của IPFS:
     node autoBot.cjs
 
-Bước 5: Khởi động Bot Tự động (Off-chain Worker)
+### Bước 5: Khởi động Bot Tự động (Off-chain Worker)
 Mở Terminal 2 và chạy Bot để hệ thống tự động lắng nghe và chốt các phiên đấu giá đã hết giờ:
     node autoBot.cjs
 (Hãy để Terminal này chạy ngầm trong suốt quá trình test web).
 
-Bước 6: Chạy giao diện Web (Frontend)
+### Bước 6: Chạy giao diện Web (Frontend)
 Mở Terminal 3 và khởi động React Vite:
     npm run dev
 Truy cập vào http://localhost:5173 để trải nghiệm hệ thống!
 
-🔐 Cấu hình biến môi trường (.env)
+## 🔐 Cấu hình biến môi trường (.env)
 Tạo một file có tên là .env ở thư mục gốc của dự án (ngang hàng với package.json) và thiết lập các thông tin sau. (Bạn có thể copy từ file .env.example nếu có sẵn):
 # ==========================================
 # CẤU HÌNH MẠNG & BLOCKCHAIN (GANACHE)
@@ -79,7 +79,7 @@ VITE_RPC_URL="[http://127.0.0.1:7545](http://127.0.0.1:7545)"
 VITE_PINATA_API_KEY="pinata_api_key_cua_ban_vao_day"
 VITE_PINATA_SECRET_API_KEY="pinata_secret_key_cua_ban_vao_day"
 
-📁 Cấu trúc Thư mục (Project Structure)
+##  📁 Cấu trúc Thư mục (Project Structure)
 📦 EtherVault
  ┣ 📂 contracts          # Chứa toàn bộ mã nguồn Smart Contract
  ┃ ┣ 📜 NFT.sol
