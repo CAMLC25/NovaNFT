@@ -65,3 +65,46 @@ Mở Terminal 3 và khởi động React Vite:
 npm run dev
 \`\`\`
 Truy cập vào `http://localhost:5173` để trải nghiệm hệ thống!
+
+### Cấu hình biến môi trường (.env)
+Tạo một file có tên là `.env` ở thư mục gốc của dự án (ngang hàng với `package.json`) và thiết lập các thông tin sau. (Bạn có thể copy từ file `.env.example` nếu có sẵn):
+
+\`\`\`env
+# ==========================================
+# CẤU HÌNH MẠNG & BLOCKCHAIN (GANACHE)
+# ==========================================
+# Private Key của tài khoản Admin (Lấy từ Ganache)
+# ⚠️ CẢNH BÁO: CHỈ DÙNG KEY TEST. TUYỆT ĐỐI KHÔNG DÙNG KEY CỦA VÍ MAINNET!
+PRIVATE_KEY="0x_private_key_ganache_cua_ban_vao_day"
+
+# RPC URL của mạng Local (Mặc định của Ganache thường là 7545 hoặc 8545)
+VITE_RPC_URL="http://127.0.0.1:7545"
+
+# ==========================================
+# CẤU HÌNH LƯU TRỮ IPFS (PINATA)
+# ==========================================
+# Chỉ cần thiết nếu bạn test tính năng Upload ảnh thật lên IPFS
+VITE_PINATA_API_KEY="pinata_api_key_cua_ban_vao_day"
+VITE_PINATA_SECRET_API_KEY="pinata_secret_key_cua_ban_vao_day"
+\`\`\`
+
+## 📁 Cấu trúc Thư mục (Project Structure)
+```text
+📦 EtherVault
+ ┣ 📂 contracts          # Chứa toàn bộ mã nguồn Smart Contract
+ ┃ ┣ 📜 NFT.sol
+ ┃ ┣ 📜 Marketplace.sol
+ ┃ ┣ 📜 Auction.sol
+ ┃ ┗ 📜 Bank.sol
+ ┣ 📂 scripts            # Kịch bản triển khai (Deployment)
+ ┃ ┗ 📜 deploy.js
+ ┣ 📂 src                # Mã nguồn Frontend (React)
+ ┃ ┣ 📂 components       # Các UI Component dùng chung (Navbar, Cards...)
+ ┃ ┣ 📂 context          # Web3Context (Quản lý trạng thái ví và Contract)
+ ┃ ┣ 📂 pages            # Các trang giao diện (Home, Explore, Auction, Profile...)
+ ┃ ┣ 📂 services         # Xử lý API (Pinata/IPFS)
+ ┃ ┗ 📜 constants.js     # Lưu trữ Contract Address và ABI
+ ┣ 📜 autoBot.cjs        # 🤖 Worker chạy ngầm tự chốt đấu giá
+ ┣ 📜 autoNFT.cjs        # 🤖 Script tự động tạo dữ liệu mẫu (Seeding)
+ ┣ 📜 hardhat.config.js  # Cấu hình môi trường Hardhat
+ ┗ 📜 package.json       # Danh sách thư viện
