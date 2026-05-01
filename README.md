@@ -11,7 +11,7 @@
 - `NFT.sol` – quản lý NFT  
 - `Marketplace.sol` – mua bán  
 - `Auction.sol` – đấu giá  
-- `Bank.sol` – thanh toán  
+- `Bank.sol` – thanh toán (Chuyển tiền)
 
 ➡️ Modular, dễ nâng cấp
 
@@ -108,7 +108,7 @@ npm install
 
 ```bash
 npx hardhat compile
-npx hardhat run scripts/deploy.js --network localhost
+npx hardhat run scripts/deploy.js --network ganache
 ```
 
 ---
@@ -144,13 +144,11 @@ npm run dev
 ## 🔐 .env
 
 ```env
-PRIVATE_KEY="your_private_key"
-VITE_RPC_URL="http://127.0.0.1:7545"
-
-VITE_PINATA_API_KEY="your_key"
-VITE_PINATA_SECRET_API_KEY="your_secret"
+VITE_PINATA_JWT=
+GANACHE_URL=
+GANACHE_PRIVATE_KEY=
 ```
-
+Đối với key VITE_PINATA_JWT thì lên trang PINATA đăng ký tài khoản, tạo project để lấy API
 ---
 
 ## 📁 Structure
@@ -200,4 +198,4 @@ package.json
 
 ## 👨‍💻 Author
 
-**Cam**
+**CAM**
