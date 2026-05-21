@@ -1,201 +1,146 @@
-# 🎨 EtherVault  
-### Decentralized NFT Marketplace & Auction Platform
+# NovaNFT
 
-**EtherVault** là một nền tảng thương mại điện tử phi tập trung (dApp) dành cho **NFT (Non-Fungible Tokens)**, cung cấp trải nghiệm mua bán và đấu giá tài sản số minh bạch, tự động và không cần trung gian.
+### Hybrid Decentralized NFT Marketplace & Automated Auction Platform
 
----
-
-## 🌟 Tính năng nổi bật
-
-### 🧩 Kiến trúc Smart Contract
-- `NFT.sol` – quản lý NFT  
-- `Marketplace.sol` – mua bán  
-- `Auction.sol` – đấu giá  
-- `Bank.sol` – thanh toán (Chuyển tiền)
-
-➡️ Modular, dễ nâng cấp
+**NovaNFT** là nền tảng thương mại điện tử Web3 dành cho NFT, hỗ trợ mua bán giá cố định, đấu giá tự động và quản lý số dư nội bộ thông qua Bank contract.
 
 ---
 
-### 🛒 Marketplace
-- Niêm yết NFT  
-- Mua trực tiếp  
-- Hủy niêm yết  
+## Tính năng chính
+
+### Kiến trúc hợp đồng thông minh
+
+- `NFT.sol`: đúc NFT, lưu tokenURI, creator và hỗ trợ ERC721Enumerable.
+- `Marketplace.sol`: niêm yết, mua và hủy bán giá cố định.
+- `Auction.sol`: tạo phiên đấu giá, đặt giá, hoàn tiền bidder cũ và chốt phiên.
+- `Bank.sol`: quản lý số dư nội bộ và rút tiền về ví.
+
+### Marketplace
+
+- Niêm yết NFT theo giá cố định.
+- Mua NFT trực tiếp bằng ETH.
+- Seller nhận tiền trong Bank balance.
+- Owner nhận phí giao dịch trong Bank balance.
+
+### Đấu giá tự động
+
+- Tạo phiên đấu giá theo `startTime` và `endTime`.
+- Bidder cũ được hoàn tiền vào Bank khi bị outbid.
+- Sau khi hết giờ, bot hoặc bất kỳ người dùng nào cũng có thể gọi chốt phiên.
+- Nếu không có bid, NFT được trả về seller.
+
+### Off-chain Worker
+
+- `autoBot.cjs`: tự động quét và chốt các phiên đấu giá đã hết hạn.
+- `autoNFT.cjs`: tạo dữ liệu NFT mẫu để demo local.
+
+### Hồ sơ người dùng
+
+- Đang sở hữu.
+- Đã tạo.
+- Đang niêm yết.
+- Đang đấu giá.
+- Hoạt động: mint, mua, bán, bid, chốt thầu, rút tiền, chuyển ETH.
 
 ---
 
-### ⏱️ Đấu giá tự động
-- Đấu giá theo thời gian  
-- Auto refund người thua  
-- Auto finalize khi hết giờ  
+## Công nghệ
 
-🔥 Không cần user thao tác
-
----
-
-### 🤖 Off-chain Bot
-- Lắng nghe blockchain  
-- Tự động xử lý đấu giá  
+- Solidity `^0.8.20`
+- OpenZeppelin `v4.9.6`
+- Hardhat + Ganache
+- ReactJS + Vite + Tailwind CSS
+- Ethers.js `v5`
+- Node.js CommonJS worker
 
 ---
 
-### 👨‍🎨 Artist Profile
-- Lịch sử giao dịch  
-- Activity chi tiết  
-
----
-
-### 🧪 Mock Data
-- Tạo dữ liệu test nhanh  
-- Không cần IPFS  
-
----
-
-## 🛠️ Công nghệ
-
-- Solidity, Hardhat, OpenZeppelin  
-- ReactJS, Vite, Tailwind  
-- Ethers.js  
-- Node.js  
-- Ganache  
-
----
-
-## 🏗️ Kiến trúc
-
-```
-User
- ↓
-React + Ethers.js
- ↓
-Smart Contracts
- ↓
-Blockchain (Ganache)
- ↑
-Bot (Node.js)
-```
-
----
-
-## 🚀 Setup
+## Cài đặt
 
 ### Yêu cầu
-- Node.js (v16 hoặc v18)  
-- MetaMask  
-- Ganache  
 
----
+- Node.js
+- Ganache
+- MetaMask
 
-### Clone
+### Cài dependencies
 
 ```bash
-git clone https://github.com/CAMLC25/EtherVault-NFT.git
-cd EtherVault-NFT
 npm install
 ```
 
----
+### Cấu hình `.env`
 
-### Setup Ganache
+```env
+VITE_PINATA_JWT=
+GANACHE_URL=http://127.0.0.1:7545
+GANACHE_PRIVATE_KEY=
+BOT_SCAN_INTERVAL_MS=12000
+```
 
-- RPC: http://127.0.0.1:7545  
-- Chain ID: 1337  
-- Import private key  
-
----
-
-### Deploy
+### Compile và deploy
 
 ```bash
 npx hardhat compile
 npx hardhat run scripts/deploy.js --network ganache
 ```
 
----
+Sau deploy, địa chỉ contract sẽ được ghi vào:
 
-### Seed data
-
-```bash
-node autoBot.cjs
+```text
+src/constants/contractAddress.json
 ```
 
----
-
-### Run Bot
-
-```bash
-node autoBot.cjs
-```
-
-⚠️ Phải chạy liên tục
-
----
-
-### Run Frontend
+### Chạy frontend
 
 ```bash
 npm run dev
 ```
 
-👉 http://localhost:5173
+Frontend mặc định chạy tại:
 
----
-
-## 🔐 .env
-
-```env
-VITE_PINATA_JWT=
-GANACHE_URL=
-GANACHE_PRIVATE_KEY=
+```text
+http://localhost:5173
 ```
-Đối với key VITE_PINATA_JWT thì lên trang PINATA đăng ký tài khoản, tạo project để lấy API
----
 
-## 📁 Structure
+### Chạy bot chốt đấu giá
 
+```bash
+node autoBot.cjs
 ```
-contracts/
- ├ NFT.sol
- ├ Marketplace.sol
- ├ Auction.sol
- └ Bank.sol
 
-scripts/
- └ deploy.js
+### Tạo dữ liệu mẫu
 
-src/
- ├ components/
- ├ context/
- ├ pages/
- ├ services/
- └ constants.js
-
-autoBot.cjs
-hardhat.config.js
-package.json
+```bash
+node autoNFT.cjs
 ```
 
 ---
 
-## 💡 Highlights
+## Kiểm thử
 
-- Modular Contracts  
-- Auto Auction (Bot)  
-- Easy Demo  
-- Web3 Portfolio Ready  
-
----
-
-## 🚧 Future
-
-- Deploy Testnet  
-- Royalty  
-- Lazy Mint  
-- IPFS thật  
-- Realtime UI  
+```bash
+npm test
+```
 
 ---
 
-## 👨‍💻 Author
+## Luồng demo đề xuất
+
+1. Mint NFT.
+2. Niêm yết giá cố định.
+3. Mua NFT.
+4. Rút tiền từ Bank.
+5. Tạo phiên đấu giá.
+6. Bid và outbid.
+7. Kiểm tra refund trong Bank.
+8. Chờ hết giờ.
+9. Cho autoBot chốt phiên.
+10. Tắt bot và thử chốt phiên thủ công từ frontend.
+11. Kiểm tra activity của user và contract profile.
+
+---
+
+## Tác giả
 
 **CAM**

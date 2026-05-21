@@ -9,7 +9,7 @@ import { useWeb3 } from "../context/Web3Context";
 import { uploadImageToIPFS, uploadMetadataToIPFS } from "../services/pinataService";
 
 export default function CreateNFT() {
-  const { account, nft, market, auction } = useWeb3();
+  const { account, nft, market, auction, isCorrectNetwork, networkError } = useWeb3();
   const navigate = useNavigate();
 
   const [formData, setFormData] = useState({
@@ -26,6 +26,10 @@ export default function CreateNFT() {
   // 💡 STATE CHO CUSTOM DIALOG
   const [dialog, setDialog] = useState({ isOpen: false, type: "success", title: "", message: "" });
   const showDialog = (type, title, message) => setDialog({ isOpen: true, type, title, message });
+  const getErrorMessage = (error) => {
+    if (error?.code === 4001) return "Bạn đã từ chối giao dịch trên MetaMask.";
+    return error?.reason || error?.data?.message || error?.message || "Giao dịch thất bại.";
+  };
 
   const categories = [
     { value: "image", label: "NFT Hình ảnh", icon: <ImageIcon size={18} /> },
@@ -55,11 +59,22 @@ export default function CreateNFT() {
   const handleMint = async () => {
     try {
       if (!account) return showDialog("error", "Chưa kết nối ví", "Vui lòng kết nối ví MetaMask để đúc NFT!");
-      if (!nft) return showDialog("error", "Lỗi hệ thống", "Hợp đồng Smart Contract chưa sẵn sàng!");
+      if (!nft) return showDialog("error", "Lỗi hệ thống", "Hợp đồng thông minh chưa sẵn sàng!");
+      if (!isCorrectNetwork) return showDialog("error", "Sai mạng", networkError || "Vui lòng chuyển MetaMask về mạng Ganache local.");
 
       const { name, description, category, saleType, price, royalty, thumbnail, assetFile, startTime, endTime } = formData;
       if (!name || !description || !price || !thumbnail || !assetFile) {
         return showDialog("error", "Thiếu thông tin", "Vui lòng điền đủ: Tên, Mô tả, Giá, Ảnh bìa và File tài sản!");
+      }
+      if (saleType === "fixed" && !market) return showDialog("error", "Lỗi hệ thống", "Hợp đồng Marketplace chưa sẵn sàng.");
+      if (saleType === "auction" && !auction) return showDialog("error", "Lỗi hệ thống", "Hợp đồng đấu giá chưa sẵn sàng.");
+
+      let priceWei;
+      try {
+        priceWei = ethers.utils.parseEther(price);
+        if (priceWei.lte(0)) return showDialog("error", "Lỗi nhập liệu", "Giá phải lớn hơn 0 ETH.");
+      } catch (error) {
+        return showDialog("error", "Lỗi nhập liệu", "Giá ETH không hợp lệ.");
       }
 
       let startTimestamp = 0;
@@ -67,15 +82,17 @@ export default function CreateNFT() {
 
       if (saleType === "auction") {
         if (!endTime) return showDialog("error", "Lỗi thời gian", "Vui lòng chọn thời gian kết thúc đấu giá!");
-        const now = Date.now();
-        const startMs = startTime ? new Date(startTime).getTime() : now;
-        const endMs = new Date(endTime).getTime();
+        const nowSec = Math.floor(Date.now() / 1000);
+        const minStartSec = nowSec + 60;
+        const startSec = startTime ? Math.floor(new Date(startTime).getTime() / 1000) : minStartSec;
+        const endSec = Math.floor(new Date(endTime).getTime() / 1000);
 
-        if (startTime && startMs < now - 60000) return showDialog("error", "Lỗi thời gian", "Thời gian bắt đầu không được ở trong quá khứ!");
-        if (endMs <= startMs) return showDialog("error", "Lỗi thời gian", "Thời gian kết thúc phải diễn ra sau thời gian bắt đầu!");
+        if (Number.isNaN(startSec) || Number.isNaN(endSec)) return showDialog("error", "Lỗi thời gian", "Thời gian đấu giá không hợp lệ.");
+        if (startTime && startSec < minStartSec) return showDialog("error", "Lỗi thời gian", "Thời gian bắt đầu phải sau hiện tại ít nhất 1 phút.");
+        if (endSec <= startSec) return showDialog("error", "Lỗi thời gian", "Thời gian kết thúc phải diễn ra sau thời gian bắt đầu!");
 
-        startTimestamp = Math.floor(startMs / 1000);
-        endTimestamp = Math.floor(endMs / 1000);
+        startTimestamp = startSec;
+        endTimestamp = endSec;
       }
 
       setLoading(true);
@@ -100,8 +117,9 @@ export default function CreateNFT() {
       setStatusStep("3/4: Đang đúc NFT trên Blockchain...");
       showDialog("info", "Đang xử lý...", "3/4: Vui lòng xác nhận giao dịch Đúc (Mint) trên MetaMask...");
       const mintTx = await nft.mintNFT(tokenURI);
-      await mintTx.wait();
-      const tokenId = await nft.getCurrentId();
+      const mintReceipt = await mintTx.wait();
+      const transferEvent = mintReceipt.events?.find((event) => event.event === "Transfer");
+      const tokenId = transferEvent?.args?.tokenId || await nft.getCurrentId();
 
       // 💡 BƯỚC 4
       setStatusStep("4/4: Đang niêm yết lên sàn...");
@@ -111,10 +129,10 @@ export default function CreateNFT() {
       await approveTx.wait();
 
       if (saleType === "fixed") {
-        const tx = await market.listNFT(tokenId, ethers.utils.parseEther(price));
+        const tx = await market.listNFT(tokenId, priceWei);
         await tx.wait();
       } else {
-        const tx = await auction.startAuction(tokenId, ethers.utils.parseEther(price), startTimestamp, endTimestamp);
+        const tx = await auction.startAuction(tokenId, priceWei, startTimestamp, endTimestamp);
         await tx.wait();
       }
 
@@ -123,7 +141,7 @@ export default function CreateNFT() {
 
     } catch (error) {
       console.error(error);
-      showDialog("error", "Giao dịch thất bại", "Có lỗi xảy ra hoặc bạn đã từ chối ký giao dịch trên MetaMask.");
+      showDialog("error", "Giao dịch thất bại", getErrorMessage(error));
     } finally {
       setLoading(false);
       setStatusStep("");
@@ -172,7 +190,7 @@ export default function CreateNFT() {
       <section className="max-w-5xl mx-auto">
         <header className="mb-12">
           <h1 className="text-4xl font-bold text-gray-900 mb-2">Tạo & Niêm yết NFT</h1>
-          <p className="text-gray-500">Khởi tạo tài sản kỹ thuật số độc bản và đưa lên sàn giao dịch EtherVault.</p>
+          <p className="text-gray-500">Khởi tạo tài sản kỹ thuật số độc bản và đưa lên sàn giao dịch NovaNFT.</p>
         </header>
 
         <div className="grid lg:grid-cols-3 gap-10">

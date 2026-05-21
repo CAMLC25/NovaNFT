@@ -1,68 +1,88 @@
-require("dotenv").config(); // Tự động load dữ liệu từ file .env
+require("dotenv").config();
 const { ethers } = require("ethers");
 
-// ==========================================
-// 1. ĐỌC CONFIG TỪ FILE .ENV (Bảo mật & Không lỗi Hardhat)
-// ==========================================
-const RPC_URL = process.env.GANACHE_URL; 
-const ADMIN_PRIVATE_KEY = process.env.GANACHE_PRIVATE_KEY; 
+const RPC_URL = process.env.GANACHE_URL || "http://127.0.0.1:7545";
+const ADMIN_PRIVATE_KEY = process.env.GANACHE_PRIVATE_KEY;
+const SCAN_INTERVAL_MS = Number(process.env.BOT_SCAN_INTERVAL_MS || 12000);
 
 if (!ADMIN_PRIVATE_KEY) {
-  console.error("❌ Lỗi: Không tìm thấy GANACHE_PRIVATE_KEY trong file .env");
+  console.error("[autoBot] Thiếu GANACHE_PRIVATE_KEY trong file .env");
   process.exit(1);
 }
 
-// ==========================================
-// 2. TỰ ĐỘNG ĐỌC ĐỊA CHỈ CONTRACT
-// ==========================================
 const addresses = require("./src/constants/contractAddress.json");
 const AUCTION_ADDRESS = addresses.auction;
 
-// ==========================================
-// 3. TỰ ĐỘNG LẤY ABI TỪ ARTIFACTS
-// ==========================================
-const auctionArtifact = require("./artifacts/contracts/Auction.sol/AuctionMarket.json");
-const AUCTION_ABI = auctionArtifact.abi;
-
-// ==========================================
-// KHỞI TẠO KẾT NỐI
-// ==========================================
-const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
-const adminWallet = new ethers.Wallet(ADMIN_PRIVATE_KEY, provider);
-const auctionContract = new ethers.Contract(AUCTION_ADDRESS, AUCTION_ABI, adminWallet);
-
-async function runBot() {
-  console.log("==================================================");
-  console.log("🤖 [ETHERVAULT BOT] Đang khởi động hệ thống...");
-  console.log(`📡 RPC Node: ${RPC_URL}`);
-  console.log(`🏦 Ví Admin:  ${adminWallet.address}`);
-  console.log(`📜 Contract:  ${AUCTION_ADDRESS}`);
-  console.log("==================================================\n");
-
-  // Vòng lặp quét liên tục mỗi 5 giây
-  setInterval(async () => {
-    try {
-      const tokenIds = await auctionContract.getAllAuctionTokenIds();
-      const now = Math.floor(Date.now() / 1000);
-
-      for (let i = 0; i < tokenIds.length; i++) {
-        const id = tokenIds[i].toNumber();
-        const auction = await auctionContract.auctions(id);
-
-        // LOGIC TỰ ĐỘNG: Active == true VÀ Giờ hiện tại >= Giờ kết thúc
-        if (auction.active && now >= auction.endTime) {
-          console.log(`⏳ NFT #${id} đã hết giờ đấu giá! Đang kích hoạt lệnh đóng phiên...`);
-          
-          const tx = await auctionContract.completeAuction(id, { gasLimit: 500000 });
-          await tx.wait(); // Chờ giao dịch được block xác nhận
-          
-          console.log(`✅ [THÀNH CÔNG] Đã chốt đơn NFT #${id}! Lịch sử và tiền đã được cập nhật.\n`);
-        }
-      }
-    } catch (error) {
-      console.log("❌ Lỗi mạng hoặc quét dữ liệu:", error.reason || error.message);
-    }
-  }, 5000);
+if (!AUCTION_ADDRESS || AUCTION_ADDRESS === ethers.constants.AddressZero) {
+  console.error("[autoBot] Địa chỉ Auction contract không hợp lệ. Vui lòng deploy contract trước.");
+  process.exit(1);
 }
 
-runBot();
+const auctionArtifact = require("./artifacts/contracts/Auction.sol/AuctionMarket.json");
+const provider = new ethers.providers.JsonRpcProvider(RPC_URL);
+const adminWallet = new ethers.Wallet(ADMIN_PRIVATE_KEY, provider);
+const auctionContract = new ethers.Contract(AUCTION_ADDRESS, auctionArtifact.abi, adminWallet);
+const processingAuctions = new Set();
+
+let intervalId;
+
+async function scanAuctions() {
+  try {
+    await provider.getBlockNumber();
+
+    const gasBalance = await provider.getBalance(adminWallet.address);
+    if (gasBalance.isZero()) {
+      console.warn("[autoBot] Ví bot không có ETH để trả gas.");
+      return;
+    }
+
+    const tokenIds = await auctionContract.getAllAuctionTokenIds();
+    const now = Math.floor(Date.now() / 1000);
+
+    for (const tokenIdBN of tokenIds) {
+      const tokenId = tokenIdBN.toString();
+      if (processingAuctions.has(tokenId)) continue;
+
+      const auction = await auctionContract.auctions(tokenIdBN);
+      if (!auction.active || now < auction.endTime.toNumber()) continue;
+
+      processingAuctions.add(tokenId);
+
+      try {
+        console.log(`[autoBot] Đang chốt phiên đấu giá #${tokenId} đã hết hạn...`);
+        const tx = await auctionContract.completeAuction(tokenIdBN, { gasLimit: 600000 });
+        console.log(`[autoBot] Đã gửi giao dịch: ${tx.hash}`);
+        await tx.wait();
+        console.log(`[autoBot] Đã chốt xong phiên đấu giá #${tokenId}`);
+      } catch (error) {
+        console.error(`[autoBot] Không thể chốt phiên đấu giá #${tokenId}:`, error.reason || error.message);
+      } finally {
+        processingAuctions.delete(tokenId);
+      }
+    }
+  } catch (error) {
+    console.error("[autoBot] Quét phiên đấu giá thất bại:", error.reason || error.message);
+  }
+}
+
+async function runBot() {
+  console.log("[autoBot] Worker tự động chốt đấu giá NovaNFT đã khởi động");
+  console.log(`[autoBot] RPC: ${RPC_URL}`);
+  console.log(`[autoBot] Ví bot: ${adminWallet.address}`);
+  console.log(`[autoBot] Auction contract: ${AUCTION_ADDRESS}`);
+  console.log(`[autoBot] Chu kỳ quét: ${SCAN_INTERVAL_MS}ms`);
+
+  await scanAuctions();
+  intervalId = setInterval(scanAuctions, SCAN_INTERVAL_MS);
+}
+
+process.on("SIGINT", () => {
+  console.log("\n[autoBot] Đang dừng worker...");
+  if (intervalId) clearInterval(intervalId);
+  process.exit(0);
+});
+
+runBot().catch((error) => {
+  console.error("[autoBot] Lỗi nghiêm trọng:", error.reason || error.message);
+  process.exit(1);
+});

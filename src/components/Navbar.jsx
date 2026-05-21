@@ -48,9 +48,9 @@ export default function Navbar() {
           <div className="flex items-center gap-8 shrink-0">
             <div onClick={() => handleNavigation("/")} className="text-2xl font-black tracking-tighter cursor-pointer flex items-center gap-2 group">
               <div className="w-8 h-8 bg-blue-600 rounded-xl flex items-center justify-center rotate-12 group-hover:rotate-0 transition-transform duration-300">
-                <span className="text-white text-sm -rotate-12 group-hover:rotate-0 transition-transform duration-300">E</span>
+                <span className="text-white text-sm -rotate-12 group-hover:rotate-0 transition-transform duration-300">N</span>
               </div>
-              <span className="hidden sm:block">EtherVault</span>
+              <span className="hidden sm:block">NovaNFT</span>
             </div>
             <div className="hidden lg:flex items-center gap-6">
               {navLinks.map((link) => (
@@ -121,9 +121,9 @@ export default function Navbar() {
           <div className="flex items-center justify-between p-6 border-b border-gray-100">
             <div className="text-2xl font-black tracking-tighter flex items-center gap-2">
               <div className="w-8 h-8 bg-blue-600 rounded-xl flex items-center justify-center">
-                <span className="text-white text-sm">E</span>
+                <span className="text-white text-sm">N</span>
               </div>
-              EtherVault
+              NovaNFT
             </div>
             <button onClick={() => setIsMobileMenuOpen(false)} className="p-2 bg-gray-100 text-gray-600 rounded-full">
               <X size={20} />

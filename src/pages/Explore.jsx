@@ -104,7 +104,7 @@ export default function Explore() {
           <h1 className="text-5xl lg:text-6xl font-black tracking-tighter text-gray-900 flex items-center gap-4">
             Khám phá <ShoppingBag className="text-blue-600" size={48} />
           </h1>
-          <p className="text-gray-500 text-lg max-w-xl font-medium">Duyệt qua các tác phẩm độc bản trên hệ sinh thái EtherVault.</p>
+          <p className="text-gray-500 text-lg max-w-xl font-medium">Duyệt qua các tác phẩm độc bản trên hệ sinh thái NovaNFT.</p>
         </div>
 
         <div className="flex flex-col sm:flex-row gap-4 w-full xl:w-auto">

@@ -33,6 +33,10 @@ export default function OwnedDetail() {
 
   const showDialog = (type, title, message) => setDialog({ isOpen: true, type, title, message });
   const shortenAddress = (address) => address ? `${address.slice(0, 6)}...${address.slice(-4)}` : "";
+  const getErrorMessage = (error) => {
+    if (error?.code === 4001) return "Bạn đã từ chối giao dịch trên MetaMask.";
+    return error?.reason || error?.data?.message || error?.message || "Giao dịch thất bại.";
+  };
   
   const generateGradient = (address) => {
     if (!address) return "linear-gradient(135deg, #e5e7eb 0%, #f3f4f6 100%)";
@@ -49,7 +53,8 @@ export default function OwnedDetail() {
       const tokenURI = await nft.tokenURI(id);
       const metadata = await (await fetch(tokenURI)).json();
 
-      const filter = nft.filters.Transfer(null, null, Number(id));
+      const tokenId = ethers.BigNumber.from(id);
+      const filter = nft.filters.Transfer(null, null, tokenId);
       const logs = await nft.queryFilter(filter);
       
       let trueCreator = account; 
@@ -120,7 +125,7 @@ export default function OwnedDetail() {
         category: metadata.category || "image",
         thumbnail: metadata.thumbnail || metadata.image,
         assetUrl: metadata.asset || metadata.image,
-        collection: metadata.collection || "EtherVault Private",
+        collection: metadata.collection || "NovaNFT Private",
         creator: trueCreator,
         owner: currentOwner
       });
@@ -149,45 +154,51 @@ export default function OwnedDetail() {
     try {
       setProcessing(true);
       const targetContract = activeTab === "fixed" ? MARKETPLACE_ADDRESS : AUCTION_ADDRESS;
-      const tx = await nft.approve(targetContract, id);
+      const tx = await nft.approve(targetContract, ethers.BigNumber.from(id));
       showDialog("info", "Đang xử lý...", "Vui lòng chờ mạng Blockchain xác nhận.");
       await tx.wait();
       setIsApproved(true);
       setDialog({ ...dialog, isOpen: false }); 
-    } catch (error) { showDialog("error", "Cấp quyền thất bại", "Bạn đã từ chối giao dịch."); } 
+    } catch (error) { showDialog("error", "Cấp quyền thất bại", getErrorMessage(error)); } 
     finally { setProcessing(false); }
   };
 
   const handleListFixed = async () => {
     if (!price || parseFloat(price) <= 0) return showDialog("error", "Lỗi nhập liệu", "Giá phải lớn hơn 0");
+    if (!market) return showDialog("error", "Lỗi hệ thống", "Hợp đồng Marketplace chưa sẵn sàng.");
     try {
       setProcessing(true);
-      const tx = await market.listNFT(id, ethers.utils.parseEther(price));
+      const priceWei = ethers.utils.parseEther(price);
+      const tx = await market.listNFT(ethers.BigNumber.from(id), priceWei);
       showDialog("info", "Đang xử lý...", "Đang đưa NFT của bạn lên sàn chợ.");
       await tx.wait();
       showDialog("success", "Thành công!", "NFT đã được niêm yết bán.");
       setTimeout(() => navigate(`/explore/${id}`), 2000);
-    } catch (error) { showDialog("error", "Lỗi niêm yết", "Không thể đăng bán."); } 
+    } catch (error) { showDialog("error", "Lỗi niêm yết", getErrorMessage(error)); } 
     finally { setProcessing(false); }
   };
 
   const handleStartAuction = async () => {
     if (!minPrice || parseFloat(minPrice) <= 0) return showDialog("error", "Lỗi nhập liệu", "Giá khởi điểm > 0.");
+    if (!auction) return showDialog("error", "Lỗi hệ thống", "Hợp đồng đấu giá chưa sẵn sàng.");
     if (!endDate) return showDialog("error", "Lỗi nhập liệu", "Chọn thời gian kết thúc.");
     const now = Math.floor(Date.now() / 1000);
-    const startTimestamp = startDate ? Math.floor(new Date(startDate).getTime() / 1000) : now;
+    const minStart = now + 60;
+    const startTimestamp = startDate ? Math.floor(new Date(startDate).getTime() / 1000) : minStart;
     const endTimestamp = Math.floor(new Date(endDate).getTime() / 1000);
-    if (startTimestamp < now - 60) return showDialog("error", "Lỗi", "Bắt đầu không được trong quá khứ.");
+    if (Number.isNaN(startTimestamp) || Number.isNaN(endTimestamp)) return showDialog("error", "Lỗi", "Thời gian đấu giá không hợp lệ.");
+    if (startDate && startTimestamp < minStart) return showDialog("error", "Lỗi", "Bắt đầu phải sau hiện tại ít nhất 1 phút.");
     if (endTimestamp <= startTimestamp) return showDialog("error", "Lỗi", "Kết thúc phải sau Bắt đầu.");
 
     try {
       setProcessing(true);
-      const tx = await auction.startAuction(id, ethers.utils.parseEther(minPrice), startTimestamp, endTimestamp);
+      const minPriceWei = ethers.utils.parseEther(minPrice);
+      const tx = await auction.startAuction(ethers.BigNumber.from(id), minPriceWei, startTimestamp, endTimestamp);
       showDialog("info", "Đang xử lý...", "Đang tạo phiên đấu giá trên Blockchain.");
       await tx.wait();
       showDialog("success", "Thành công!", "Phiên đấu giá đã được tạo.");
       setTimeout(() => navigate(`/auction/${id}`), 2000);
-    } catch (error) { showDialog("error", "Lỗi", "Không thể tạo phiên đấu giá."); } 
+    } catch (error) { showDialog("error", "Lỗi", getErrorMessage(error)); } 
     finally { setProcessing(false); }
   };
 
@@ -196,12 +207,12 @@ export default function OwnedDetail() {
     if (giftAddress.toLowerCase() === account.toLowerCase()) return showDialog("error", "Lỗi", "Không tự tặng mình.");
     try {
       setIsGifting(true);
-      const tx = await nft.transferFrom(account, giftAddress, id);
+      const tx = await nft.transferFrom(account, giftAddress, ethers.BigNumber.from(id));
       showDialog("info", "Đang xử lý...", "Đang chuyển nhượng trên Blockchain.");
       await tx.wait();
       showDialog("success", "Đã tặng!", `NFT đã chuyển sang ví ${shortenAddress(giftAddress)}.`);
       setTimeout(() => navigate("/profile"), 2000);
-    } catch (error) { showDialog("error", "Lỗi", "Giao dịch bị từ chối."); } 
+    } catch (error) { showDialog("error", "Lỗi", getErrorMessage(error)); } 
     finally { setIsGifting(false); }
   };
 
@@ -291,16 +302,16 @@ export default function OwnedDetail() {
           <div className="bg-white rounded-[2.5rem] border border-gray-100 shadow-sm overflow-hidden">
             <div className="bg-gray-50 px-8 py-5 border-b border-gray-100">
               <h3 className="text-sm font-black text-gray-900 uppercase tracking-widest flex items-center gap-2">
-                <FileCode size={18} className="text-blue-600"/> Details
+                <FileCode size={18} className="text-blue-600"/> Chi tiết
               </h3>
             </div>
             <div className="divide-y divide-gray-50">
-              {/* <DetailRow icon={<FileCode size={16}/>} label="Contract Address" value={shortenAddress(NFT_ADDRESS)} isLink onClick={() => navigate(`/profile/${NFT_ADDRESS}`)} /> */}
-              <DetailRow icon={<User size={16}/>} label="Creator" value={shortenAddress(data.creator)} isLink onClick={() => navigate(`/profile/${data.creator}`)} />
-              <DetailRow icon={<Wallet size={16}/>} label="Owner" value={shortenAddress(data.owner)} isLink onClick={() => navigate(`/profile/${data.owner}`)} />
+              {/* <DetailRow icon={<FileCode size={16}/>} label="Địa chỉ hợp đồng" value={shortenAddress(NFT_ADDRESS)} isLink onClick={() => navigate(`/profile/${NFT_ADDRESS}`)} /> */}
+              <DetailRow icon={<User size={16}/>} label="Người tạo NFT" value={shortenAddress(data.creator)} isLink onClick={() => navigate(`/profile/${data.creator}`)} />
+              <DetailRow icon={<Wallet size={16}/>} label="Chủ sở hữu" value={shortenAddress(data.owner)} isLink onClick={() => navigate(`/profile/${data.owner}`)} />
               <DetailRow icon={<Hash size={16}/>} label="Token ID" value={data.id} />
-              <DetailRow icon={<Layers size={16}/>} label="Token Standard" value="ERC-721" />
-              <DetailRow icon={<LinkIcon size={16}/>} label="Chain" value="Ganache Local" />
+              <DetailRow icon={<Layers size={16}/>} label="Chuẩn token" value="ERC-721" />
+              <DetailRow icon={<LinkIcon size={16}/>} label="Mạng" value="Ganache Local" />
             </div>
           </div>
         </div>
@@ -383,7 +394,7 @@ export default function OwnedDetail() {
       <div className="bg-white rounded-[3rem] border border-gray-100 shadow-sm overflow-hidden animate-in fade-in slide-in-from-bottom-8 mt-12">
         <div className="bg-gray-50 px-10 py-8 border-b border-gray-100 flex items-center gap-3">
           <Activity size={28} className="text-teal-600" />
-          <h3 className="text-xl font-black text-gray-900 uppercase tracking-widest">Lịch sử giao dịch (Item Activity)</h3>
+          <h3 className="text-xl font-black text-gray-900 uppercase tracking-widest">Lịch sử giao dịch vật phẩm</h3>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -391,8 +402,8 @@ export default function OwnedDetail() {
               <tr className="bg-white border-b border-gray-100 text-xs uppercase tracking-widest text-gray-400">
                 <th className="p-8 font-black">Sự kiện</th>
                 <th className="p-8 font-black">Giá</th>
-                <th className="p-8 font-black">Từ (From)</th>
-                <th className="p-8 font-black">Đến (To)</th>
+                <th className="p-8 font-black">Từ</th>
+                <th className="p-8 font-black">Đến</th>
                 <th className="p-8 font-black text-right">Thời gian</th>
               </tr>
             </thead>

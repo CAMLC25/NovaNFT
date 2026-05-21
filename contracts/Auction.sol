@@ -4,71 +4,75 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
+interface IAuctionBank {
+    function credit(address user) external payable;
+}
+
 contract AuctionMarket is ReentrancyGuard {
     address public nftContract;
-
-    /*
-    =====================================
-    SAVE ALL AUCTION TOKEN IDS
-    =====================================
-    */
+    IAuctionBank public bank;
     uint256[] public auctionTokenIds;
 
     struct Auction {
         uint256 tokenId;
         address seller;
         uint256 minPrice;
-        uint256 startTime; // Hẹn giờ bắt đầu
-        uint256 endTime;   // Hẹn giờ kết thúc
+        uint256 startTime;
+        uint256 endTime;
         address highestBidder;
         uint256 highestBid;
         bool active;
     }
 
-    /*
-    tokenId => Auction
-    */
     mapping(uint256 => Auction) public auctions;
 
-    /*
-    =====================================
-    EVENTS (SỰ KIỆN LƯU LỊCH SỬ ĐẤU GIÁ)
-    =====================================
-    */
+    event AuctionStarted(
+        uint256 indexed tokenId,
+        address indexed seller,
+        uint256 minPrice,
+        uint256 startTime,
+        uint256 endTime
+    );
     event BidPlaced(uint256 indexed tokenId, address indexed bidder, uint256 amount, uint256 timestamp);
-    event AuctionCanceled(uint256 indexed tokenId, address indexed seller); // 💡 Sự kiện hủy đấu giá
+    event AuctionCanceled(uint256 indexed tokenId, address indexed seller, uint256 timestamp);
+    event AuctionCompleted(
+        uint256 indexed tokenId,
+        address indexed seller,
+        address indexed winner,
+        uint256 amount,
+        uint256 timestamp
+    );
+    event AuctionEndedNoBid(uint256 indexed tokenId, address indexed seller, uint256 timestamp);
 
-    constructor(address _nftContract) {
+    constructor(address _nftContract, address _bankContract) {
+        require(_nftContract != address(0), "Invalid NFT contract");
+        require(_bankContract != address(0), "Invalid Bank contract");
         nftContract = _nftContract;
+        bank = IAuctionBank(_bankContract);
     }
 
-    /*
-    =====================================
-    START AUCTION
-    =====================================
-    */
     function startAuction(
         uint256 _tokenId,
         uint256 _minPrice,
         uint256 _startTime,
         uint256 _endTime
-    ) external {
-        require(_minPrice > 0, "Gia toi thieu phai > 0");
-        require(!auctions[_tokenId].active, "NFT dang dau gia");
-        require(_endTime > _startTime, "Thoi gian ket thuc phai sau thoi gian bat dau");
+    ) external nonReentrant {
+        IERC721 nft = IERC721(nftContract);
 
-        /*
-        Transfer NFT vao contract
-        */
-        IERC721(nftContract).transferFrom(
-            msg.sender,
-            address(this),
-            _tokenId
+        require(_minPrice > 0, "Min price must be greater than zero");
+        require(!auctions[_tokenId].active, "Auction already active");
+        require(nft.ownerOf(_tokenId) == msg.sender, "Not NFT owner");
+        require(
+            nft.getApproved(_tokenId) == address(this) ||
+                nft.isApprovedForAll(msg.sender, address(this)),
+            "Auction not approved"
         );
+        require(_endTime > _startTime, "Invalid auction time");
+        require(_endTime > block.timestamp, "End time must be in future");
+        require(_startTime >= block.timestamp, "Start time must be now or future");
 
-        /*
-        Create auction
-        */
+        nft.transferFrom(msg.sender, address(this), _tokenId);
+
         auctions[_tokenId] = Auction({
             tokenId: _tokenId,
             seller: msg.sender,
@@ -80,151 +84,79 @@ contract AuctionMarket is ReentrancyGuard {
             active: true
         });
 
-        /*
-        Save tokenId de frontend fetch duoc
-        */
         auctionTokenIds.push(_tokenId);
+
+        emit AuctionStarted(_tokenId, msg.sender, _minPrice, _startTime, _endTime);
     }
 
-    /*
-    =====================================
-    PLACE BID
-    =====================================
-    */
-    function placeBid(uint256 _tokenId)
-        external
-        payable
-        nonReentrant
-    {
+    function placeBid(uint256 _tokenId) external payable nonReentrant {
         Auction storage auction = auctions[_tokenId];
 
-        require(
-            auction.active,
-            "Auction khong ton tai"
-        );
+        require(auction.active, "Auction is not active");
+        require(block.timestamp >= auction.startTime, "Auction has not started");
+        require(block.timestamp < auction.endTime, "Auction already ended");
+        require(msg.sender != auction.seller, "Seller cannot bid");
 
-        require(
-            block.timestamp >= auction.startTime,
-            "Cuoc dau gia chua bat dau!"
-        );
-
-        require(
-            block.timestamp < auction.endTime,
-            "Dau gia da ket thuc"
-        );
-
-        require(
-            msg.sender != auction.seller,
-            "Khong the tu bid NFT cua minh"
-        );
-
-        require(
-            msg.value > auction.minPrice &&
-            msg.value > auction.highestBid,
-            "Gia bid qua thap"
-        );
-
-        /*
-        Refund nguoi bid truoc
-        */
-        if (auction.highestBidder != address(0)) {
-            payable(auction.highestBidder).transfer(
-                auction.highestBid
-            );
+        if (auction.highestBid == 0) {
+            require(msg.value >= auction.minPrice, "Bid below min price");
+        } else {
+            require(msg.value > auction.highestBid, "Bid must be higher than current bid");
         }
 
-        /*
-        Update highest bid
-        */
+        if (auction.highestBidder != address(0)) {
+            bank.credit{value: auction.highestBid}(auction.highestBidder);
+        }
+
         auction.highestBidder = msg.sender;
         auction.highestBid = msg.value;
 
-        /*
-        PHÁT SỰ KIỆN ĐỂ FRONTEND LƯU LỊCH SỬ
-        */
         emit BidPlaced(_tokenId, msg.sender, msg.value, block.timestamp);
     }
 
-    /*
-    =====================================
-    CANCEL AUCTION (MỚI BỔ SUNG)
-    =====================================
-    */
     function cancelAuction(uint256 _tokenId) external nonReentrant {
         Auction storage auction = auctions[_tokenId];
 
-        require(auction.active, "Phien dau gia khong active");
-        require(auction.seller == msg.sender, "Ban khong phai nguoi tao dau gia");
-        require(auction.highestBidder == address(0), "Da co nguoi dat gia, khong the huy");
+        require(auction.active, "Auction is not active");
+        require(auction.seller == msg.sender, "Only seller can cancel");
+        require(auction.highestBidder == address(0), "Cannot cancel after bid");
 
-        // Đánh dấu ngừng đấu giá
         auction.active = false;
 
-        // Trả NFT về cho người bán
         IERC721(nftContract).transferFrom(address(this), msg.sender, _tokenId);
 
-        emit AuctionCanceled(_tokenId, msg.sender);
+        emit AuctionCanceled(_tokenId, msg.sender, block.timestamp);
     }
 
-    /*
-    =====================================
-    COMPLETE AUCTION
-    =====================================
-    */
-    function completeAuction(uint256 _tokenId)
-        external
-        nonReentrant
-    {
+    function completeAuction(uint256 _tokenId) external nonReentrant {
         Auction storage auction = auctions[_tokenId];
 
-        require(
-            auction.active,
-            "Auction khong active"
-        );
-
-        require(
-            block.timestamp >= auction.endTime,
-            "Chua den luc ket thuc"
-        );
+        require(auction.active, "Auction is not active");
+        require(block.timestamp >= auction.endTime, "Auction not ended");
 
         auction.active = false;
 
-        /*
-        Co nguoi thang dau gia
-        */
         if (auction.highestBidder != address(0)) {
-            payable(auction.seller).transfer(
-                auction.highestBid
-            );
+            bank.credit{value: auction.highestBid}(auction.seller);
+            IERC721(nftContract).transferFrom(address(this), auction.highestBidder, _tokenId);
 
-            IERC721(nftContract).transferFrom(
-                address(this),
-                auction.highestBidder,
-                _tokenId
-            );
-        }
-        /*
-        Khong ai bid -> tra lai seller
-        */
-        else {
-            IERC721(nftContract).transferFrom(
-                address(this),
+            emit AuctionCompleted(
+                _tokenId,
                 auction.seller,
-                _tokenId
+                auction.highestBidder,
+                auction.highestBid,
+                block.timestamp
             );
+        } else {
+            IERC721(nftContract).transferFrom(address(this), auction.seller, _tokenId);
+            emit AuctionEndedNoBid(_tokenId, auction.seller, block.timestamp);
         }
     }
 
-    /*
-    =====================================
-    GET ALL AUCTION TOKEN IDS
-    =====================================
-    */
-    function getAllAuctionTokenIds()
-        public
-        view
-        returns (uint256[] memory)
-    {
+    function endAuction(uint256 _tokenId) external {
+        this.completeAuction(_tokenId);
+    }
+
+    function getAllAuctionTokenIds() public view returns (uint256[] memory) {
         return auctionTokenIds;
     }
 }

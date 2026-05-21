@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom"; // 💡 Mới
+import { useNavigate } from "react-router-dom";
 import { ethers } from "ethers";
 import { Gavel, Clock, AlertCircle, CheckCircle2 } from "lucide-react";
 import { useWeb3 } from "../context/Web3Context";
 
 export default function Auction() {
   const { nft, auction } = useWeb3();
-  const navigate = useNavigate(); // 💡 Mới
+  const navigate = useNavigate();
   
   const [auctionsList, setAuctionsList] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -84,7 +84,7 @@ export default function Auction() {
         <h1 className="text-5xl lg:text-6xl font-black tracking-tighter text-gray-900 mb-4 flex items-center gap-4">
           Sàn Đấu Giá <Gavel className="text-purple-600" size={48} />
         </h1>
-        <p className="text-xl text-gray-500 max-w-2xl font-medium">Tranh giành những tác phẩm độc bản tại EtherVault.</p>
+        <p className="text-xl text-gray-500 max-w-2xl font-medium">Tranh giành những tác phẩm độc bản tại NovaNFT.</p>
       </header>
 
       <div className="flex gap-4 mb-10 border-b border-gray-200 pb-px">
@@ -109,7 +109,7 @@ export default function Auction() {
           {displayAuctions.map((item) => (
             <div 
               key={item.id} 
-              onClick={() => navigate(`/auction/${item.id}`)} // 💡 Dùng đường dẫn chuẩn
+              onClick={() => navigate(`/auction/${item.id}`)}
               className="bg-white rounded-[2rem] border border-gray-100 shadow-sm hover:shadow-2xl transition-all duration-300 overflow-hidden cursor-pointer group flex flex-col"
             >
               <div className="relative aspect-square overflow-hidden bg-gray-100">

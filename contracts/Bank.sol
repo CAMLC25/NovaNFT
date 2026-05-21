@@ -1,28 +1,58 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-contract Bank {
-    // 💡 1. Tạo cái "Loa phát thanh" để lưu lịch sử
-    // Chữ 'indexed' giúp ethers.js trên Web dễ dàng lọc (filter) giao dịch theo ví
-    event TransferETH(
-        address indexed from,
-        address indexed to,
-        uint256 amount,
-        uint256 timestamp
-    );
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 
-    // 💡 2. Hàm chuyển tiền (nhận ETH vào và chuyển đi ngay lập tức)
-    function transferETH(address _to) external payable {
-        // Kiểm tra điều kiện cơ bản
-        require(msg.value > 0, "So tien gui phai lon hon 0");
-        require(_to != address(0), "Khong the gui den dia chi 0");
-        require(_to != msg.sender, "Khong the tu gui cho chinh minh");
+contract Bank is Ownable, ReentrancyGuard {
+    mapping(address => uint256) public balances;
+    mapping(address => bool) public authorizedContracts;
 
-        // Thực hiện lệnh chuyển ETH cho người nhận (dùng hàm call là chuẩn bảo mật nhất hiện nay)
-        (bool success, ) = _to.call{value: msg.value}("");
-        require(success, "Giao dich chuyen ETH that bai!");
+    event BalanceCredited(address indexed user, uint256 amount);
+    event Withdrawn(address indexed user, uint256 amount);
+    event AuthorizedContractUpdated(address indexed contractAddress, bool allowed);
+    event TransferETH(address indexed from, address indexed to, uint256 amount, uint256 timestamp);
 
-        // Phát loa thông báo lưu vào Blockchain để ReactJS bắt được
-        emit TransferETH(msg.sender, _to, msg.value, block.timestamp);
+    modifier onlyAuthorized() {
+        require(authorizedContracts[msg.sender], "Not authorized");
+        _;
+    }
+
+    function setAuthorizedContract(address contractAddress, bool allowed) external onlyOwner {
+        require(contractAddress != address(0), "Invalid contract");
+        authorizedContracts[contractAddress] = allowed;
+        emit AuthorizedContractUpdated(contractAddress, allowed);
+    }
+
+    function credit(address user) external payable onlyAuthorized {
+        require(user != address(0), "Invalid user");
+        require(msg.value > 0, "Amount must be greater than zero");
+
+        balances[user] += msg.value;
+        emit BalanceCredited(user, msg.value);
+    }
+
+    function withdraw() external nonReentrant {
+        uint256 amount = balances[msg.sender];
+        require(amount > 0, "No balance to withdraw");
+
+        balances[msg.sender] = 0;
+
+        (bool success, ) = msg.sender.call{value: amount}("");
+        require(success, "Withdraw failed");
+
+        emit Withdrawn(msg.sender, amount);
+    }
+
+    function transferETH(address to) external payable {
+        require(msg.value > 0, "Amount must be greater than zero");
+        require(to != address(0), "Invalid recipient");
+        require(to != msg.sender, "Cannot send to yourself");
+        require(to.code.length == 0, "Recipient cannot be a contract");
+
+        (bool success, ) = to.call{value: msg.value}("");
+        require(success, "Transfer failed");
+
+        emit TransferETH(msg.sender, to, msg.value, block.timestamp);
     }
 }

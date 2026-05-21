@@ -1,10 +1,11 @@
 import React, { useState } from "react";
-import { ethers } from 'https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.esm.min.js';
+import { ethers } from "ethers";
 import { useWeb3 } from "../context/Web3Context";
 import { Send, ArrowRight, Wallet, AlertCircle, CheckCircle2, X } from "lucide-react";
+import { AUCTION_ADDRESS, BANK_ADDRESS, MARKETPLACE_ADDRESS, NFT_ADDRESS } from "../constants";
 
 export default function Transfer() {
-  const { account, balance, bank } = useWeb3();
+  const { account, balance, bank, isCorrectNetwork, networkError } = useWeb3();
   const [recipient, setRecipient] = useState("");
   const [amount, setAmount] = useState("");
   const [loading, setLoading] = useState(false);
@@ -16,19 +17,41 @@ export default function Transfer() {
   const showDialog = (type, title, message) => {
     setDialog({ isOpen: true, type, title, message });
   };
+  const getErrorMessage = (error) => {
+    if (error?.code === 4001) return "Bạn đã từ chối giao dịch trên MetaMask.";
+    return error?.reason || error?.data?.message || error?.message || "Vui lòng kiểm tra lại số dư hoặc địa chỉ ví nhận.";
+  };
+  const isSystemContractAddress = (address) => {
+    if (!address || !ethers.utils.isAddress(address)) return false;
+    const normalized = address.toLowerCase();
+    return [NFT_ADDRESS, MARKETPLACE_ADDRESS, AUCTION_ADDRESS, BANK_ADDRESS].some((contractAddress) => contractAddress?.toLowerCase() === normalized);
+  };
 
   const handleTransfer = async (e) => {
     e.preventDefault();
     if (!account) return showDialog("error", "Chưa kết nối ví", "Vui lòng kết nối ví MetaMask trước khi chuyển tiền!");
-    if (!bank) return showDialog("error", "Lỗi hệ thống", "Hệ thống Smart Contract chưa sẵn sàng. Vui lòng tải lại trang.");
+    if (!bank) return showDialog("error", "Lỗi hệ thống", "Hệ thống hợp đồng thông minh chưa sẵn sàng. Vui lòng tải lại trang.");
+    if (!isCorrectNetwork) return showDialog("error", "Sai mạng", networkError || "Vui lòng chuyển MetaMask về mạng Ganache local.");
+    if (!ethers.utils.isAddress(recipient)) return showDialog("error", "Địa chỉ không hợp lệ", "Vui lòng nhập địa chỉ ví Ethereum hợp lệ.");
+    if (recipient.toLowerCase() === account.toLowerCase()) return showDialog("error", "Không thể chuyển", "Bạn không thể tự chuyển tiền cho chính mình.");
+    if (isSystemContractAddress(recipient)) return showDialog("error", "Không thể chuyển", "Chức năng này chỉ dùng để chuyển ETH giữa ví người dùng, không gửi vào hợp đồng hệ thống.");
+
+    let value;
+    try {
+      value = ethers.utils.parseEther(amount);
+      if (value.lte(0)) return showDialog("error", "Số tiền không hợp lệ", "Số lượng ETH phải lớn hơn 0.");
+      if (balance && value.gt(ethers.utils.parseEther(balance))) return showDialog("error", "Không đủ số dư", "Ví của bạn không đủ ETH để chuyển.");
+    } catch {
+      return showDialog("error", "Số tiền không hợp lệ", "Vui lòng nhập số ETH hợp lệ.");
+    }
 
     setLoading(true);
     setStatus({ type: "info", message: "Đang yêu cầu chữ ký..." });
 
     try {
-      // 💡 GỌI ĐẾN CONTRACT BANK (ĐỂ LƯU SAO KÊ)
+      // Gọi qua Bank để lưu sao kê chuyển ETH giữa người dùng.
       const tx = await bank.transferETH(recipient, {
-        value: ethers.utils.parseEther(amount)
+        value
       });
 
       setStatus({ type: "info", message: "Đang chờ Blockchain xác nhận giao dịch..." });
@@ -43,7 +66,7 @@ export default function Transfer() {
     } catch (err) {
       console.error(err);
       setStatus({ type: "", message: "" });
-      showDialog("error", "Giao dịch thất bại", err.reason || "Vui lòng kiểm tra lại số dư hoặc địa chỉ ví nhận!");
+      showDialog("error", "Giao dịch thất bại", getErrorMessage(err));
     } finally {
       setLoading(false);
     }

@@ -8,31 +8,38 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 
 contract MyNFT is ERC721, ERC721Enumerable, ERC721URIStorage, Ownable {
     uint256 private _tokenIds;
+    mapping(uint256 => address) public creators;
 
-    // 1. Trong OZ V4, Ownable không nhận tham số trong constructor
-    constructor() ERC721("EtherVault Art", "EVX") Ownable() {}
+    event NFTMinted(uint256 indexed tokenId, address indexed creator, string tokenURI);
+
+    constructor() ERC721("NovaNFT Art", "NNFT") Ownable() {}
 
     function mintNFT(string memory _tokenURI) public returns (uint256) {
+        require(bytes(_tokenURI).length > 0, "Token URI is required");
+
         _tokenIds++;
         uint256 newItemId = _tokenIds;
-        
-        _mint(msg.sender, newItemId);
+
+        _safeMint(msg.sender, newItemId);
         _setTokenURI(newItemId, _tokenURI);
-        
+        creators[newItemId] = msg.sender;
+
+        require(creators[newItemId] != address(0), "Invalid creator");
+
+        emit NFTMinted(newItemId, msg.sender, _tokenURI);
+
         return newItemId;
+    }
+
+    function creatorOf(uint256 tokenId) public view returns (address) {
+        require(_exists(tokenId), "Token does not exist");
+        return creators[tokenId];
     }
 
     function getCurrentId() public view returns (uint256) {
         return _tokenIds;
     }
 
-    // ===================================================================
-    // CÁC HÀM OVERRIDE BẮT BUỘC DÀNH CHO OPENZEPPELIN V4.X
-    // ===================================================================
-
-    /**
-     * @dev Hook chạy trước khi chuyển token (đây là hàm bản V4 yêu cầu)
-     */
     function _beforeTokenTransfer(
         address from,
         address to,
@@ -42,28 +49,20 @@ contract MyNFT is ERC721, ERC721Enumerable, ERC721URIStorage, Ownable {
         super._beforeTokenTransfer(from, to, firstTokenId, batchSize);
     }
 
-    /**
-     * @dev Ghi đè hàm hủy token để giải quyết xung đột giữa ERC721 và URIStorage
-     */
     function _burn(uint256 tokenId) internal override(ERC721, ERC721URIStorage) {
         super._burn(tokenId);
     }
 
-    /**
-     * @dev Trả về link metadata
-     */
     function tokenURI(uint256 tokenId)
         public
         view
         override(ERC721, ERC721URIStorage)
         returns (string memory)
     {
+        require(_exists(tokenId), "Token does not exist");
         return super.tokenURI(tokenId);
     }
 
-    /**
-     * @dev Kiểm tra chuẩn interface hỗ trợ
-     */
     function supportsInterface(bytes4 interfaceId)
         public
         view

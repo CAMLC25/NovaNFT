@@ -5,9 +5,14 @@ import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
+interface IBank {
+    function credit(address user) external payable;
+}
+
 contract FixedPriceMarket is ReentrancyGuard, Ownable {
-    uint256 public feePercent = 2; // Phí sàn 2%
+    uint256 public feePercent = 2;
     address public nftContract;
+    IBank public bank;
 
     struct Listing {
         uint256 tokenId;
@@ -16,47 +21,33 @@ contract FixedPriceMarket is ReentrancyGuard, Ownable {
         bool active;
     }
 
-    /*
-    =========================
-    DỮ LIỆU SÀN GIAO DỊCH
-    =========================
-    */
     mapping(uint256 => Listing) public listings;
     uint256[] public listedTokenIds;
 
-    /*
-    =========================
-    SỰ KIỆN (EVENTS) - Rất quan trọng cho lịch sử Activity
-    =========================
-    */
-    event NFTListed(
-        uint256 indexed tokenId,
-        address indexed seller,
-        uint256 price
-    );
-    event NFTSold(
-        uint256 indexed tokenId,
-        address indexed seller,
-        address indexed buyer,
-        uint256 price
-    );
+    event NFTListed(uint256 indexed tokenId, address indexed seller, uint256 price);
+    event NFTSold(uint256 indexed tokenId, address indexed seller, address indexed buyer, uint256 price);
     event ListingCanceled(uint256 indexed tokenId, address indexed seller);
 
-    // Lưu ý: Ownable chuẩn 5.0 cần truyền msg.sender vào constructor
-    constructor(address _nftContract) Ownable() {
+    constructor(address _nftContract, address _bankContract) Ownable() {
+        require(_nftContract != address(0), "Invalid NFT contract");
+        require(_bankContract != address(0), "Invalid Bank contract");
         nftContract = _nftContract;
+        bank = IBank(_bankContract);
     }
 
-    /*
-    =========================
-    NIÊM YẾT NFT (LIST)
-    =========================
-    */
     function listNFT(uint256 _tokenId, uint256 _price) external nonReentrant {
-        require(_price > 0, "Gia phai lon hon 0");
+        IERC721 nft = IERC721(nftContract);
 
-        // Chuyển NFT từ ví người bán vào hợp đồng sàn (Ký gửi)
-        IERC721(nftContract).transferFrom(msg.sender, address(this), _tokenId);
+        require(_price > 0, "Price must be greater than zero");
+        require(!listings[_tokenId].active, "NFT already listed");
+        require(nft.ownerOf(_tokenId) == msg.sender, "Not NFT owner");
+        require(
+            nft.getApproved(_tokenId) == address(this) ||
+                nft.isApprovedForAll(msg.sender, address(this)),
+            "Marketplace not approved"
+        );
+
+        nft.transferFrom(msg.sender, address(this), _tokenId);
 
         listings[_tokenId] = Listing({
             tokenId: _tokenId,
@@ -70,65 +61,49 @@ contract FixedPriceMarket is ReentrancyGuard, Ownable {
         emit NFTListed(_tokenId, msg.sender, _price);
     }
 
-    /*
-    =========================
-    HỦY NIÊM YẾT (CANCEL) - MỚI BỔ SUNG
-    =========================
-    */
     function cancelListing(uint256 _tokenId) external nonReentrant {
         Listing storage listing = listings[_tokenId];
 
-        require(listing.active, "NFT nay khong trong trang thai ban");
-        require(listing.seller == msg.sender, "Ban khong phai chu so huu");
+        require(listing.active, "Listing is not active");
+        require(msg.sender == listing.seller, "Only seller can cancel");
 
-        // Đánh dấu ngừng bán
         listing.active = false;
 
-        // Trả NFT từ sàn về lại ví người bán
         IERC721(nftContract).transferFrom(address(this), msg.sender, _tokenId);
 
         emit ListingCanceled(_tokenId, msg.sender);
     }
 
-    /*
-    =========================
-    MUA NFT (BUY)
-    =========================
-    */
     function buyNFT(uint256 _tokenId) external payable nonReentrant {
         Listing storage listing = listings[_tokenId];
 
-        require(listing.active, "NFT khong dang ban");
-        require(msg.sender != listing.seller, "Khong the tu mua NFT cua minh");
-        require(msg.value >= listing.price, "Khong du tien");
+        require(listing.active, "Listing is not active");
+        require(msg.sender != listing.seller, "Cannot buy your own NFT");
+        require(msg.value >= listing.price, "Insufficient payment");
 
         uint256 price = listing.price;
         uint256 fee = (price * feePercent) / 100;
         uint256 sellerAmount = price - fee;
 
-        // Chốt trạng thái trước khi chuyển tiền (Bảo mật)
         listing.active = false;
 
-        // Chuyển tiền cho người bán và chủ sàn
-        payable(listing.seller).transfer(sellerAmount);
-        payable(owner()).transfer(fee);
+        if (sellerAmount > 0) {
+            bank.credit{value: sellerAmount}(listing.seller);
+        }
+        if (fee > 0) {
+            bank.credit{value: fee}(owner());
+        }
 
-        // Chuyển NFT từ sàn cho người mua
         IERC721(nftContract).transferFrom(address(this), msg.sender, _tokenId);
 
-        // Trả lại tiền thừa nếu người dùng gửi dư
         if (msg.value > price) {
-            payable(msg.sender).transfer(msg.value - price);
+            (bool refunded, ) = msg.sender.call{value: msg.value - price}("");
+            require(refunded, "Refund failed");
         }
 
         emit NFTSold(_tokenId, listing.seller, msg.sender, price);
     }
 
-    /*
-    =========================
-    VIEW FUNCTIONS
-    =========================
-    */
     function getAllListedTokenIds() public view returns (uint256[] memory) {
         return listedTokenIds;
     }
@@ -137,9 +112,8 @@ contract FixedPriceMarket is ReentrancyGuard, Ownable {
         return listedTokenIds.length;
     }
 
-    // Cho phép chủ sàn thay đổi mức phí nếu cần
     function updateFeePercent(uint256 _newFee) external onlyOwner {
-        require(_newFee <= 10, "Phi qua cao"); // Giới hạn tối đa 10%
+        require(_newFee <= 10, "Fee too high");
         feePercent = _newFee;
     }
 }

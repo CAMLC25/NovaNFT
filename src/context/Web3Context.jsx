@@ -1,14 +1,27 @@
-import React, { createContext, useState, useContext, useEffect } from 'react';
-import { ethers } from 'https://cdnjs.cloudflare.com/ajax/libs/ethers/5.7.2/ethers.esm.min.js';
-import { NFT_ADDRESS, NFT_ABI, MARKETPLACE_ADDRESS, MARKETPLACE_ABI, AUCTION_ADDRESS, AUCTION_ABI, BANK_ADDRESS, BANK_ABI } from '../constants';
+import React, { createContext, useContext, useEffect, useState } from "react";
+import { ethers } from "ethers";
+import {
+  AUCTION_ABI,
+  AUCTION_ADDRESS,
+  BANK_ABI,
+  BANK_ADDRESS,
+  MARKETPLACE_ABI,
+  MARKETPLACE_ADDRESS,
+  NFT_ABI,
+  NFT_ADDRESS
+} from "../constants";
 
 const Web3Context = createContext();
 
 const GANACHE_RPC = "http://127.0.0.1:7545";
+const SUPPORTED_CHAIN_IDS = new Set([1337, 5777, 31337]);
 
 export const Web3Provider = ({ children }) => {
   const [account, setAccount] = useState("");
   const [balance, setBalance] = useState("");
+  const [chainId, setChainId] = useState(null);
+  const [isCorrectNetwork, setIsCorrectNetwork] = useState(true);
+  const [networkError, setNetworkError] = useState("");
   const [contracts, setContracts] = useState({ nft: null, market: null, auction: null, bank: null });
 
   const initContracts = (signerOrProvider) => {
@@ -20,87 +33,110 @@ export const Web3Provider = ({ children }) => {
     });
   };
 
+  const updateNetworkState = async (provider) => {
+    const network = await provider.getNetwork();
+    setChainId(network.chainId);
+    const supported = SUPPORTED_CHAIN_IDS.has(network.chainId);
+    setIsCorrectNetwork(supported);
+    setNetworkError(supported ? "" : `Unsupported network ${network.chainId}. Please use Ganache 1337/5777.`);
+    return supported;
+  };
+
   const updateAccountInfo = async (walletAddress) => {
     setAccount(walletAddress);
-    if (window.ethereum) {
-      const provider = new ethers.providers.Web3Provider(window.ethereum);
-      const bal = await provider.getBalance(walletAddress);
-      setBalance(ethers.utils.formatEther(bal));
+    if (!window.ethereum) return;
 
-      const signer = provider.getSigner();
-      initContracts(signer); 
-    }
+    const provider = new ethers.providers.Web3Provider(window.ethereum);
+    await updateNetworkState(provider);
+    const bal = await provider.getBalance(walletAddress);
+    setBalance(ethers.utils.formatEther(bal));
+    initContracts(provider.getSigner());
   };
 
-  // 💡 1. NÚT KẾT NỐI VÍ
   const connectWallet = async () => {
-    if (window.ethereum) {
-      try {
-        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
-        // Xóa dấu vết đăng xuất khi người dùng chủ động kết nối lại
-        localStorage.removeItem("isDisconnected"); 
-        await updateAccountInfo(accounts[0]);
-      } catch (err) { 
-        console.error("Người dùng từ chối kết nối!"); 
-      }
-    } else {
-      alert("Vui lòng cài đặt MetaMask!");
+    if (!window.ethereum) {
+      alert("Please install MetaMask.");
+      return;
+    }
+
+    try {
+      const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+      localStorage.removeItem("isDisconnected");
+      if (accounts.length > 0) await updateAccountInfo(accounts[0]);
+    } catch (error) {
+      console.error("Wallet connection rejected:", error);
     }
   };
 
-  // 💡 2. HÀM MỚI: NGẮT KẾT NỐI
   const disconnectWallet = () => {
-    // Đánh dấu vào trình duyệt là người dùng đã chủ động thoát
     localStorage.setItem("isDisconnected", "true");
     setAccount("");
     setBalance("");
-    
-    // Đưa hợp đồng về chế độ khách (Read-only)
     const readOnlyProvider = new ethers.providers.JsonRpcProvider(GANACHE_RPC);
     initContracts(readOnlyProvider);
+    updateNetworkState(readOnlyProvider).catch(() => {
+      setIsCorrectNetwork(false);
+      setNetworkError("Cannot connect to Ganache RPC.");
+    });
   };
 
-  // 💡 3. TỰ ĐỘNG KIỂM TRA VÍ NGẦM
   const checkIfWalletIsConnected = async () => {
-    if (!window.ethereum) return;
-    
-    // Nếu người dùng đã chủ động bấm nút "Đăng xuất" trước đó thì bỏ qua, KHÔNG auto-connect nữa
-    if (localStorage.getItem("isDisconnected") === "true") return;
+    if (!window.ethereum || localStorage.getItem("isDisconnected") === "true") return;
 
     try {
-      const accounts = await window.ethereum.request({ method: 'eth_accounts' });
-      if (accounts.length > 0) {
-        await updateAccountInfo(accounts[0]);
-      }
+      const accounts = await window.ethereum.request({ method: "eth_accounts" });
+      if (accounts.length > 0) await updateAccountInfo(accounts[0]);
     } catch (error) {
-      console.error("Lỗi khi kiểm tra kết nối ví:", error);
+      console.error("Wallet check failed:", error);
     }
   };
 
   useEffect(() => {
     const readOnlyProvider = new ethers.providers.JsonRpcProvider(GANACHE_RPC);
     initContracts(readOnlyProvider);
+    updateNetworkState(readOnlyProvider).catch(() => {
+      setIsCorrectNetwork(false);
+      setNetworkError("Cannot connect to Ganache RPC.");
+    });
     checkIfWalletIsConnected();
 
-    if (window.ethereum) {
-      window.ethereum.on('accountsChanged', (accounts) => {
-        if (accounts.length > 0) {
-          localStorage.removeItem("isDisconnected"); // Xóa block nếu họ đổi ví trên MetaMask
-          updateAccountInfo(accounts[0]);
-        } else {
-          disconnectWallet(); // Người dùng khóa ví trên MetaMask
-        }
-      });
+    if (!window.ethereum) return undefined;
 
-      window.ethereum.on('chainChanged', () => {
-        window.location.reload();
-      });
-    }
+    const handleAccountsChanged = (accounts) => {
+      if (accounts.length > 0) {
+        localStorage.removeItem("isDisconnected");
+        updateAccountInfo(accounts[0]);
+      } else {
+        disconnectWallet();
+      }
+    };
+
+    const handleChainChanged = () => {
+      window.location.reload();
+    };
+
+    window.ethereum.on("accountsChanged", handleAccountsChanged);
+    window.ethereum.on("chainChanged", handleChainChanged);
+
+    return () => {
+      window.ethereum.removeListener("accountsChanged", handleAccountsChanged);
+      window.ethereum.removeListener("chainChanged", handleChainChanged);
+    };
   }, []);
 
   return (
-    // 💡 NHỚ XUẤT HÀM disconnectWallet RA NGOÀI NHÉ
-    <Web3Context.Provider value={{ account, balance, connectWallet, disconnectWallet, ...contracts }}>
+    <Web3Context.Provider
+      value={{
+        account,
+        balance,
+        chainId,
+        isCorrectNetwork,
+        networkError,
+        connectWallet,
+        disconnectWallet,
+        ...contracts
+      }}
+    >
       {children}
     </Web3Context.Provider>
   );

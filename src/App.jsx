@@ -43,7 +43,7 @@ export default function App() {
           </div>
           
           <footer className="border-t border-gray-200 py-8 px-12 bg-white text-center text-[10px] font-bold text-gray-400 uppercase tracking-widest">
-            © 2026 ETHERVAULT. BẢO LƯU MỌI QUYỀN.
+            © 2026 NOVANFT. BẢO LƯU MỌI QUYỀN.
           </footer>
         </div>
       </Router>

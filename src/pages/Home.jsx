@@ -72,7 +72,7 @@ export default function Home() {
           </h1>
           
           <p className="text-xl text-gray-500 max-w-lg font-medium leading-relaxed">
-            Tham gia vào tương lai của nghệ thuật số. Sở hữu những tác phẩm độc bản được bảo mật tuyệt đối trên nền tảng EtherVault.
+            Tham gia vào tương lai của nghệ thuật số. Sở hữu những tác phẩm độc bản được bảo mật tuyệt đối trên nền tảng NovaNFT.
           </p>
           
           <div className="flex gap-4 pt-2">

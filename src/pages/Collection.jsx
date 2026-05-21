@@ -27,7 +27,7 @@ export default function Collection() {
     setLoading(true);
     
     try {
-      // 1. Lấy tổng số lượng NFT đang tồn tại từ Smart Contract
+      // 1. Lấy tổng số lượng NFT đang tồn tại từ hợp đồng thông minh
       const totalSupplyBN = await nft.totalSupply();
       const total = totalSupplyBN.toNumber();
 
@@ -125,7 +125,7 @@ export default function Collection() {
             </div>
             <div className="flex-1 text-center md:text-left">
               <div className="flex items-center justify-center md:justify-start gap-2 mb-2">
-                <h1 className="text-3xl font-black text-gray-900">EtherVault Genesis</h1>
+                <h1 className="text-3xl font-black text-gray-900">NovaNFT Genesis</h1>
                 <CheckCircle2 size={20} className="text-blue-500 fill-blue-500/10" />
               </div>
               <p className="text-gray-500 text-sm max-w-2xl font-medium mb-6">
