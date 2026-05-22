@@ -62,7 +62,9 @@ export default function Profile() {
         name: "Hợp đồng NFT",
         role: "Quản lý ERC-721, tokenURI, creator và totalSupply.",
         shortRole: "ERC-721",
-        note: "Hợp đồng này là nguồn phát hành NFT và lịch sử đúc của toàn hệ thống.",
+        note: "Hợp đồng này phát hành NFT và lưu metadata cốt lõi của tài sản.",
+        activityScope: "NFTMinted",
+        withdrawPolicy: "Không giữ số dư Bank",
         color: "bg-blue-100 text-blue-700",
         dot: "bg-blue-500"
       },
@@ -71,7 +73,9 @@ export default function Profile() {
         name: "Hợp đồng Marketplace",
         role: "Escrow NFT và xử lý mua bán giá cố định.",
         shortRole: "Mua bán",
-        note: "NFT được chuyển tạm vào hợp đồng này khi đang niêm yết giá cố định.",
+        note: "Hợp đồng này giữ NFT tạm thời khi vật phẩm đang được niêm yết giá cố định.",
+        activityScope: "List / Buy / Cancel",
+        withdrawPolicy: "Không rút tiền",
         color: "bg-purple-100 text-purple-700",
         dot: "bg-purple-500"
       },
@@ -80,7 +84,9 @@ export default function Profile() {
         name: "Hợp đồng đấu giá",
         role: "Escrow NFT và xử lý các phiên đấu giá.",
         shortRole: "Đấu giá",
-        note: "NFT được chuyển tạm vào hợp đồng này khi phiên đấu giá đang hoạt động.",
+        note: "Hợp đồng này giữ NFT tạm thời khi phiên đấu giá đang hoạt động.",
+        activityScope: "Start / Bid / Complete / Cancel",
+        withdrawPolicy: "Không rút tiền",
         color: "bg-orange-100 text-orange-700",
         dot: "bg-orange-500"
       },
@@ -89,7 +95,9 @@ export default function Profile() {
         name: "Hợp đồng Bank",
         role: "Giữ số dư nội bộ và cho người dùng rút tiền.",
         shortRole: "Vault",
-        note: "Bank ghi nhận số dư nội bộ của người dùng; hồ sơ hợp đồng không phải ví rút tiền.",
+        note: "Hợp đồng này ghi nhận số dư nội bộ của người dùng và xử lý lệnh rút tiền.",
+        activityScope: "Credit / Withdraw / TransferETH",
+        withdrawPolicy: "User tự rút bằng withdraw()",
         color: "bg-teal-100 text-teal-700",
         dot: "bg-teal-500"
       }
@@ -259,13 +267,13 @@ export default function Profile() {
     const nftEventRows = [
       ...mintLogs.map((log) => ({ log, type: "Mint", tokenId: log.args.tokenId, price: "-", from: ZERO, to: log.args.creator })),
       ...listedLogs.map((log) => ({ log, type: "NFTListed", tokenId: log.args.tokenId, price: ethers.utils.formatEther(log.args.price), from: log.args.seller, to: MARKETPLACE_ADDRESS })),
-      ...soldLogs.map((log) => ({ log, type: "NFTBought", tokenId: log.args.tokenId, price: ethers.utils.formatEther(log.args.price), from: log.args.seller, to: log.args.buyer })),
+      ...soldLogs.map((log) => ({ log, type: "NFTBought", tokenId: log.args.tokenId, price: ethers.utils.formatEther(log.args.price), from: log.args.buyer, to: log.args.seller })),
       ...soldAsSellerLogs.map((log) => ({ log, type: "NFTSold", tokenId: log.args.tokenId, price: ethers.utils.formatEther(log.args.price), from: log.args.buyer, to: log.args.seller })),
       ...listingCanceledLogs.map((log) => ({ log, type: "ListingCanceled", tokenId: log.args.tokenId, price: "-", from: MARKETPLACE_ADDRESS, to: log.args.seller })),
       ...auctionStartedLogs.map((log) => ({ log, type: "AuctionStarted", tokenId: log.args.tokenId, price: ethers.utils.formatEther(log.args.minPrice), from: log.args.seller, to: AUCTION_ADDRESS })),
       ...bidLogs.map((log) => ({ log, type: "BidPlaced", tokenId: log.args.tokenId, price: ethers.utils.formatEther(log.args.amount), from: log.args.bidder, to: AUCTION_ADDRESS })),
       ...auctionCanceledLogs.map((log) => ({ log, type: "AuctionCanceled", tokenId: log.args.tokenId, price: "-", from: AUCTION_ADDRESS, to: log.args.seller })),
-      ...auctionCompletedLogs.map((log) => ({ log, type: "AuctionWon", tokenId: log.args.tokenId, price: ethers.utils.formatEther(log.args.amount), from: log.args.seller, to: log.args.winner })),
+      ...auctionCompletedLogs.map((log) => ({ log, type: "AuctionWon", tokenId: log.args.tokenId, price: ethers.utils.formatEther(log.args.amount), from: log.args.winner, to: log.args.seller })),
       ...completedAsSellerLogs.map((log) => ({ log, type: "AuctionCompleted", tokenId: log.args.tokenId, price: ethers.utils.formatEther(log.args.amount), from: log.args.winner, to: log.args.seller })),
       ...noBidLogs.map((log) => ({ log, type: "AuctionEndedNoBid", tokenId: log.args.tokenId, price: "-", from: AUCTION_ADDRESS, to: log.args.seller }))
     ];
@@ -294,12 +302,13 @@ export default function Profile() {
       const isCredit = log.event === "BalanceCredited";
       const isTransfer = log.event === "TransferETH";
       const isOutgoingTransfer = isTransfer && sameAddress(log.args.from, profileAddress);
+      const tx = isCredit ? await log.getTransaction() : null;
       return {
         id: `${log.transactionHash}-${log.logIndex}`,
         type: isTransfer ? isOutgoingTransfer ? "TransferETHSent" : "TransferETHReceived" : isCredit ? "BalanceCredited" : "Withdrawn",
         item: { id: "ETH", name: "Ethereum", img: ETH_IMG, category: "Currency" },
         price: ethers.utils.formatEther(log.args.amount),
-        from: isTransfer ? log.args.from : isCredit ? BANK_ADDRESS : profileAddress,
+        from: isTransfer ? log.args.from : isCredit ? tx?.to || BANK_ADDRESS : BANK_ADDRESS,
         to: isTransfer ? log.args.to : profileAddress,
         timestamp: block.timestamp,
         blockNumber: log.blockNumber,
@@ -526,7 +535,6 @@ export default function Profile() {
                 <>
                   <InfoPill icon={<Wallet size={16} />} name="ETH hợp đồng" label={`${Number(walletBalance).toFixed(3)} ETH`} title="Số dư ETH gốc đang nằm trực tiếp tại địa chỉ hợp đồng" />
                   <InfoPill icon={<Activity size={16} />} name="Vai trò" label={systemContract.shortRole} title={systemContract.role} />
-                  <InfoPill icon={<ArrowDownLeft size={16} />} name="Bank" label="Không áp dụng" title="Số dư Bank là số dư nội bộ của người dùng, không phải thông tin chính của hợp đồng hệ thống" dark />
                 </>
               ) : (
                 <>
@@ -549,7 +557,6 @@ export default function Profile() {
           contractInfo={systemContract}
           address={profileAddress}
           walletBalance={walletBalance}
-          short={short}
           copiedId={copiedId}
           handleCopy={handleCopy}
         />
@@ -569,7 +576,7 @@ export default function Profile() {
           <p className="font-bold text-gray-500 uppercase">Đang đồng bộ...</p>
         </div>
       ) : systemContract || activeTab === "activity" ? (
-        <ActivityTable rows={displayedItems} getEventStyle={getEventStyle} getEventLabel={getEventLabel} navigate={navigate} profileAddress={profileAddress} short={short} handleActivityClick={handleActivityClick} selfLabel={systemContract ? "HỢP ĐỒNG" : "BẠN"} />
+        <ActivityTable rows={displayedItems} getEventStyle={getEventStyle} getEventLabel={getEventLabel} navigate={navigate} profileAddress={profileAddress} account={account} short={short} handleActivityClick={handleActivityClick} selfLabel={systemContract ? "HỢP ĐỒNG" : "HỒ SƠ"} />
       ) : (
         <NftGrid items={displayedItems} isMyProfile={isMyProfile} navigate={navigate} />
       )}
@@ -585,7 +592,7 @@ export default function Profile() {
   );
 }
 
-const ContractProfilePanel = ({ contractInfo, address, walletBalance, short, copiedId, handleCopy }) => (
+const ContractProfilePanel = ({ contractInfo, address, walletBalance, copiedId, handleCopy }) => (
   <section className="mb-10 grid lg:grid-cols-3 gap-6">
     <div className="lg:col-span-2 bg-white rounded-[2rem] border border-gray-100 shadow-sm p-8">
       <div className="flex items-center gap-3 mb-5">
@@ -596,18 +603,21 @@ const ContractProfilePanel = ({ contractInfo, address, walletBalance, short, cop
       <div className="space-y-4">
         <ContractInfoRow label="Địa chỉ hợp đồng" value={address} copyKey="contractAddress" copiedId={copiedId} onCopy={handleCopy} />
         <ContractInfoRow label="Loại hợp đồng" value={contractInfo.name} />
-        <ContractInfoRow label="Vai trò ngắn" value={contractInfo.shortRole} />
+        <ContractInfoRow label="Chức năng" value={contractInfo.shortRole} />
         <ContractInfoRow label="ETH gốc" value={`${Number(walletBalance).toFixed(6)} ETH`} />
       </div>
     </div>
 
-    <div className="bg-gray-900 rounded-[2rem] p-8 text-white shadow-sm">
-      <p className="text-[10px] uppercase tracking-widest font-black text-gray-400 mb-3">Ghi chú demo</p>
-      <h3 className="text-2xl font-black mb-4">{contractInfo.shortRole}</h3>
-      <p className="text-sm text-gray-300 leading-relaxed">{contractInfo.note}</p>
-      <div className="mt-6 rounded-2xl bg-white/10 border border-white/10 px-4 py-3">
-        <p className="text-[10px] uppercase tracking-widest font-black text-gray-400 mb-1">Hiển thị activity</p>
-        <p className="text-sm font-bold">Quét sự kiện trực tiếp từ hợp đồng tương ứng.</p>
+    <div className="bg-white rounded-[2rem] border border-gray-100 shadow-sm p-8">
+      <div className="flex items-center gap-3 mb-5">
+        <Activity size={20} className="text-gray-500" />
+        <h2 className="text-xl font-black text-gray-900">Trạng thái vận hành</h2>
+      </div>
+      <p className="text-sm text-gray-500 font-medium leading-relaxed mb-6">{contractInfo.note}</p>
+      <div className="space-y-4">
+        <ContractInfoRow label="Nguồn dữ liệu" value="Sự kiện on-chain" />
+        <ContractInfoRow label="Phạm vi activity" value={contractInfo.activityScope} />
+        <ContractInfoRow label="Quyền rút tiền" value={contractInfo.withdrawPolicy} />
       </div>
     </div>
   </section>
@@ -675,7 +685,7 @@ const NftGrid = ({ items, isMyProfile, navigate }) => (
   </div>
 );
 
-const ActivityTable = ({ rows, getEventStyle, getEventLabel, navigate, profileAddress, short, handleActivityClick, selfLabel = "BẠN" }) => (
+const ActivityTable = ({ rows, getEventStyle, getEventLabel, navigate, profileAddress, account, short, handleActivityClick, selfLabel = "HỒ SƠ" }) => (
   <div className="bg-white rounded-[2rem] border border-gray-100 shadow-sm overflow-hidden">
     <div className="overflow-x-auto">
       <table className="w-full text-left border-collapse min-w-[900px]">
@@ -708,8 +718,8 @@ const ActivityTable = ({ rows, getEventStyle, getEventLabel, navigate, profileAd
                 <td className="p-6 font-mono text-sm font-black">
                   {log.price !== "-" ? <span className={`px-3 py-1.5 rounded-lg ${style.sign === "+" ? "text-green-600 bg-green-50" : style.sign === "-" ? "text-red-500 bg-red-50" : "text-gray-600 bg-gray-100"}`}>{style.sign}{log.price} ETH</span> : <span className="text-gray-400">-</span>}
                 </td>
-                <td className="p-6 font-mono text-xs">{renderAddress(log.from, profileAddress, navigate, short, selfLabel)}</td>
-                <td className="p-6 font-mono text-xs">{renderAddress(log.to, profileAddress, navigate, short, selfLabel)}</td>
+                <td className="p-6 font-mono text-xs">{renderAddress(log.from, profileAddress, account, navigate, short, selfLabel)}</td>
+                <td className="p-6 font-mono text-xs">{renderAddress(log.to, profileAddress, account, navigate, short, selfLabel)}</td>
                 <td className="p-6 text-right text-xs text-gray-400">{new Date(log.timestamp * 1000).toLocaleString("vi-VN")}</td>
               </tr>
             );
@@ -720,8 +730,9 @@ const ActivityTable = ({ rows, getEventStyle, getEventLabel, navigate, profileAd
   </div>
 );
 
-function renderAddress(address, profileAddress, navigate, short, selfLabel = "BẠN") {
+function renderAddress(address, profileAddress, account, navigate, short, selfLabel = "HỒ SƠ") {
   if (!address || address === ZERO) return <span className="text-gray-400">-</span>;
-  if (address.toLowerCase() === profileAddress.toLowerCase()) return <span className="bg-gray-900 text-white font-bold px-2 py-1 rounded">{selfLabel}</span>;
+  if (account && address.toLowerCase() === account.toLowerCase()) return <span className="bg-blue-600 text-white font-bold px-2 py-1 rounded">BẠN</span>;
+  if (profileAddress && address.toLowerCase() === profileAddress.toLowerCase()) return <span className="bg-gray-900 text-white font-bold px-2 py-1 rounded">{selfLabel}</span>;
   return <span onClick={() => navigate(`/profile/${address}`)} className="text-blue-600 hover:underline cursor-pointer">{short(address)}</span>;
 }
