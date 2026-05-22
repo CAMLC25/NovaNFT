@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { useWeb3 } from "../context/Web3Context";
 import { AUCTION_ADDRESS, BANK_ADDRESS, MARKETPLACE_ADDRESS, NFT_ADDRESS } from "../constants";
+import SharedActivityDetailModal from "../components/ActivityDetailModal";
 
 const ZERO = ethers.constants.AddressZero;
 const ETH_IMG = "https://cryptologos.cc/logos/ethereum-eth-logo.png";
@@ -40,6 +41,7 @@ export default function Profile() {
   const [copiedId, setCopiedId] = useState(null);
   const [walletBalance, setWalletBalance] = useState("0.000");
   const [bankBalance, setBankBalance] = useState("0.000");
+  const [selectedActivity, setSelectedActivity] = useState(null);
   const [dialog, setDialog] = useState({ isOpen: false, type: "success", title: "", message: "" });
   const [userNFTs, setUserNFTs] = useState({
     collected: [],
@@ -150,6 +152,14 @@ export default function Profile() {
     return Promise.all(indexes.map((index) => nft.tokenByIndex(index)));
   };
 
+  const getActivityContractAddress = (type) => {
+    if (["Mint"].includes(type)) return NFT_ADDRESS;
+    if (["NFTListed", "NFTBought", "NFTSold", "ListingCanceled"].includes(type)) return MARKETPLACE_ADDRESS;
+    if (["AuctionStarted", "BidPlaced", "AuctionCanceled", "AuctionCompleted", "AuctionWon", "AuctionEndedNoBid"].includes(type)) return AUCTION_ADDRESS;
+    if (["BalanceCredited", "Withdrawn", "TransferETH", "TransferETHSent", "TransferETHReceived"].includes(type)) return BANK_ADDRESS;
+    return ZERO;
+  };
+
   const fetchActivities = async () => {
     if (systemContract) {
       const contractRows = [];
@@ -215,7 +225,9 @@ export default function Profile() {
             to: isTransfer ? log.args.to : log.args.user,
             timestamp: block.timestamp,
             blockNumber: log.blockNumber,
-            logIndex: log.logIndex
+            logIndex: log.logIndex,
+            transactionHash: log.transactionHash,
+            contractAddress: BANK_ADDRESS
           };
         }));
 
@@ -236,7 +248,9 @@ export default function Profile() {
           to: row.to,
           timestamp: block.timestamp,
           blockNumber: row.log.blockNumber,
-          logIndex: row.log.logIndex
+          logIndex: row.log.logIndex,
+          transactionHash: row.log.transactionHash,
+          contractAddress: getActivityContractAddress(row.type)
         };
       }));
 
@@ -290,7 +304,9 @@ export default function Profile() {
         to: row.to,
         timestamp: block.timestamp,
         blockNumber: row.log.blockNumber,
-        logIndex: row.log.logIndex
+        logIndex: row.log.logIndex,
+        transactionHash: row.log.transactionHash,
+        contractAddress: getActivityContractAddress(row.type)
       };
     }));
 
@@ -312,7 +328,9 @@ export default function Profile() {
         to: isTransfer ? log.args.to : profileAddress,
         timestamp: block.timestamp,
         blockNumber: log.blockNumber,
-        logIndex: log.logIndex
+        logIndex: log.logIndex,
+        transactionHash: log.transactionHash,
+        contractAddress: BANK_ADDRESS
       };
     }));
 
@@ -506,6 +524,20 @@ export default function Profile() {
         </div>
       )}
 
+      {selectedActivity && (
+        <SharedActivityDetailModal
+          activity={selectedActivity}
+          account={account}
+          profileAddress={profileAddress}
+          getEventLabel={getEventLabel}
+          getEventStyle={getEventStyle}
+          short={short}
+          navigate={navigate}
+          profileLabel={systemContract ? "HỢP ĐỒNG" : "HỒ SƠ"}
+          onClose={() => setSelectedActivity(null)}
+        />
+      )}
+
       {!isCorrectNetwork && (
         <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-6 py-4 text-sm font-bold text-red-600">
           {networkError}
@@ -576,7 +608,7 @@ export default function Profile() {
           <p className="font-bold text-gray-500 uppercase">Đang đồng bộ...</p>
         </div>
       ) : systemContract || activeTab === "activity" ? (
-        <ActivityTable rows={displayedItems} getEventStyle={getEventStyle} getEventLabel={getEventLabel} navigate={navigate} profileAddress={profileAddress} account={account} short={short} handleActivityClick={handleActivityClick} selfLabel={systemContract ? "HỢP ĐỒNG" : "HỒ SƠ"} />
+        <ActivityTable rows={displayedItems} getEventStyle={getEventStyle} getEventLabel={getEventLabel} navigate={navigate} profileAddress={profileAddress} account={account} short={short} handleActivityClick={handleActivityClick} onOpenActivity={setSelectedActivity} selfLabel={systemContract ? "HỢP ĐỒNG" : "HỒ SƠ"} />
       ) : (
         <NftGrid items={displayedItems} isMyProfile={isMyProfile} navigate={navigate} />
       )}
@@ -685,7 +717,7 @@ const NftGrid = ({ items, isMyProfile, navigate }) => (
   </div>
 );
 
-const ActivityTable = ({ rows, getEventStyle, getEventLabel, navigate, profileAddress, account, short, handleActivityClick, selfLabel = "HỒ SƠ" }) => (
+const ActivityTable = ({ rows, getEventStyle, getEventLabel, navigate, profileAddress, account, short, handleActivityClick, onOpenActivity, selfLabel = "HỒ SƠ" }) => (
   <div className="bg-white rounded-[2rem] border border-gray-100 shadow-sm overflow-hidden">
     <div className="overflow-x-auto">
       <table className="w-full text-left border-collapse min-w-[900px]">
@@ -705,10 +737,10 @@ const ActivityTable = ({ rows, getEventStyle, getEventLabel, navigate, profileAd
           ) : rows.map((log) => {
             const style = getEventStyle(log.type);
             return (
-              <tr key={log.id} className="border-b border-gray-50 hover:bg-gray-50/50">
+              <tr key={log.id} onClick={() => onOpenActivity(log)} className="border-b border-gray-50 hover:bg-gray-50/50 cursor-pointer">
                 <td className="p-6"><div className={`flex items-center gap-2 font-bold ${style.color}`}>{style.icon} {getEventLabel(log.type)}</div></td>
                 <td className="p-6">
-                  <div className={`flex items-center gap-4 group w-fit ${log.item.id === "ETH" ? "" : "cursor-pointer"}`} onClick={() => handleActivityClick(log.item.id)}>
+                  <div className={`flex items-center gap-4 group w-fit ${log.item.id === "ETH" ? "" : "cursor-pointer"}`} onClick={(event) => { event.stopPropagation(); handleActivityClick(log.item.id); }}>
                     <div className="w-10 h-10 rounded-xl bg-white flex items-center justify-center border border-gray-100 p-1">
                       <img src={log.item.img} onError={(e) => { e.currentTarget.src = FALLBACK_IMG; }} className={`w-full h-full ${log.item.id === "ETH" ? "object-contain" : "object-cover rounded-lg"}`} alt={log.item.name} />
                     </div>
@@ -734,5 +766,5 @@ function renderAddress(address, profileAddress, account, navigate, short, selfLa
   if (!address || address === ZERO) return <span className="text-gray-400">-</span>;
   if (account && address.toLowerCase() === account.toLowerCase()) return <span className="bg-blue-600 text-white font-bold px-2 py-1 rounded">BẠN</span>;
   if (profileAddress && address.toLowerCase() === profileAddress.toLowerCase()) return <span className="bg-gray-900 text-white font-bold px-2 py-1 rounded">{selfLabel}</span>;
-  return <span onClick={() => navigate(`/profile/${address}`)} className="text-blue-600 hover:underline cursor-pointer">{short(address)}</span>;
+  return <span onClick={(event) => { event.stopPropagation(); navigate(`/profile/${address}`); }} className="text-blue-600 hover:underline cursor-pointer">{short(address)}</span>;
 }

@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { useWeb3 } from "../context/Web3Context";
 import { NFT_ADDRESS, MARKETPLACE_ADDRESS, AUCTION_ADDRESS } from "../constants";
+import ActivityDetailModal from "../components/ActivityDetailModal";
 
 export default function OwnedDetail() {
   const { id } = useParams();
@@ -16,6 +17,7 @@ export default function OwnedDetail() {
 
   const [data, setData] = useState(null);
   const [nftActivity, setNftActivity] = useState([]); 
+  const [selectedActivity, setSelectedActivity] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("fixed"); 
   
@@ -52,6 +54,11 @@ export default function OwnedDetail() {
       const currentOwner = await nft.ownerOf(id);
       const tokenURI = await nft.tokenURI(id);
       const metadata = await (await fetch(tokenURI)).json();
+      const activityItem = {
+        id,
+        name: metadata.name || `NFT #${id}`,
+        img: metadata.thumbnail || metadata.image || metadata.asset || "https://picsum.photos/seed/novanft-owned/300"
+      };
 
       const tokenId = ethers.BigNumber.from(id);
       const filter = nft.filters.Transfer(null, null, tokenId);
@@ -107,7 +114,13 @@ export default function OwnedDetail() {
         }
 
         return {
+          id: `${log.transactionHash}-${log.logIndex}`,
           hash: log.transactionHash,
+          transactionHash: log.transactionHash,
+          contractAddress: NFT_ADDRESS,
+          blockNumber: log.blockNumber,
+          logIndex: log.logIndex,
+          item: activityItem,
           type: eventType,
           price: txPrice,
           from, to,
@@ -280,6 +293,19 @@ export default function OwnedDetail() {
         </div>
       )}
 
+      {selectedActivity && (
+        <ActivityDetailModal
+          activity={selectedActivity}
+          account={account}
+          profileAddress={data?.owner}
+          getEventLabel={(type) => type}
+          getEventStyle={getEventStyle}
+          short={shortenAddress}
+          navigate={navigate}
+          onClose={() => setSelectedActivity(null)}
+        />
+      )}
+
       <Link to="/profile" className="flex items-center gap-2 font-bold text-gray-500 hover:text-black mb-8 transition-colors">
         <ArrowLeft size={20} /> Quay lại Hồ sơ của bạn
       </Link>
@@ -414,7 +440,7 @@ export default function OwnedDetail() {
                 nftActivity.map((log, index) => {
                   const style = getEventStyle(log.type);
                   return (
-                    <tr key={index} className="border-b border-gray-50 hover:bg-teal-50/30 transition-colors">
+                    <tr key={log.id || index} onClick={() => setSelectedActivity(log)} className="border-b border-gray-50 hover:bg-teal-50/30 transition-colors cursor-pointer">
                       <td className="p-8">
                         <div className={`flex items-center gap-3 font-bold text-sm ${style.color}`}>
                           {style.icon} {log.type}
@@ -431,7 +457,7 @@ export default function OwnedDetail() {
                         ) : log.from.toLowerCase() === account?.toLowerCase() ? (
                           <span className="bg-gray-900 text-white font-bold px-2 py-1 rounded text-[10px]">BẠN</span>
                         ) : (
-                          <div onClick={() => navigate(`/profile/${log.from}`)} className="flex items-center gap-2 cursor-pointer group w-fit">
+                          <div onClick={(event) => { event.stopPropagation(); navigate(`/profile/${log.from}`); }} className="flex items-center gap-2 cursor-pointer group w-fit">
                             <span className="text-blue-600 hover:underline">{shortenAddress(log.from)}</span>
                           </div>
                         )}
@@ -443,7 +469,7 @@ export default function OwnedDetail() {
                         ) : log.to.toLowerCase() === account?.toLowerCase() ? (
                           <span className="bg-gray-900 text-white font-bold px-2 py-1 rounded text-[10px]">BẠN</span>
                         ) : (
-                          <div onClick={() => navigate(`/profile/${log.to}`)} className="flex items-center gap-2 cursor-pointer group w-fit">
+                          <div onClick={(event) => { event.stopPropagation(); navigate(`/profile/${log.to}`); }} className="flex items-center gap-2 cursor-pointer group w-fit">
                             <span className="text-blue-600 hover:underline">{shortenAddress(log.to)}</span>
                           </div>
                         )}

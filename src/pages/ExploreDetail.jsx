@@ -24,7 +24,8 @@ import {
   X
 } from "lucide-react";
 import { useWeb3 } from "../context/Web3Context";
-import { MARKETPLACE_ADDRESS } from "../constants";
+import { MARKETPLACE_ADDRESS, NFT_ADDRESS } from "../constants";
+import ActivityDetailModal from "../components/ActivityDetailModal";
 
 const ZERO = ethers.constants.AddressZero;
 const FALLBACK_IMG = "https://picsum.photos/seed/ethervault-explore/800";
@@ -39,6 +40,7 @@ export default function ExploreDetail() {
   const [processing, setProcessing] = useState(false);
   const [activeTab, setActiveTab] = useState("overview");
   const [activity, setActivity] = useState([]);
+  const [selectedActivity, setSelectedActivity] = useState(null);
   const [copiedAddress, setCopiedAddress] = useState("");
   const [status, setStatus] = useState("active");
   const [dialog, setDialog] = useState({ isOpen: false, type: "success", title: "", message: "" });
@@ -97,6 +99,11 @@ export default function ExploreDetail() {
       ]);
 
       const metadata = await fetchMetadata(tokenURI);
+      const activityItem = {
+        id: tokenId.toString(),
+        name: metadata.name || `NFT #${tokenId.toString()}`,
+        img: metadata.thumbnail || metadata.image || metadata.asset || FALLBACK_IMG
+      };
       const creator = mintLogs[mintLogs.length - 1]?.args.creator || transferLogs.find((log) => log.args.from === ZERO)?.args.to || ZERO;
 
       const lastSold = soldLogs[soldLogs.length - 1];
@@ -122,7 +129,11 @@ export default function ExploreDetail() {
       const eventActivity = await Promise.all(eventRows.map(async (row) => {
         const block = await row.log.getBlock();
         return {
+          id: `${row.log.transactionHash}-${row.log.logIndex}`,
           hash: row.log.transactionHash,
+          transactionHash: row.log.transactionHash,
+          contractAddress: row.type === "Mint" ? NFT_ADDRESS : MARKETPLACE_ADDRESS,
+          item: activityItem,
           type: row.type,
           price: row.price,
           from: row.from,
@@ -139,7 +150,11 @@ export default function ExploreDetail() {
         const to = log.args.to;
         if (from === ZERO || sameAddress(to, market.address) || sameAddress(from, market.address)) return null;
         return {
+          id: `${log.transactionHash}-${log.logIndex}`,
           hash: log.transactionHash,
+          transactionHash: log.transactionHash,
+          contractAddress: NFT_ADDRESS,
+          item: activityItem,
           type: "Transfer",
           price: "-",
           from,
@@ -297,6 +312,19 @@ export default function ExploreDetail() {
         </div>
       )}
 
+      {selectedActivity && (
+        <ActivityDetailModal
+          activity={selectedActivity}
+          account={account}
+          profileAddress={data?.owner}
+          getEventLabel={getEventLabel}
+          getEventStyle={getEventStyle}
+          short={short}
+          navigate={navigate}
+          onClose={() => setSelectedActivity(null)}
+        />
+      )}
+
       {!isCorrectNetwork && (
         <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 px-6 py-4 text-sm font-bold text-red-600">{networkError}</div>
       )}
@@ -381,7 +409,7 @@ export default function ExploreDetail() {
                 </div>
               </div>
             ) : (
-              <ActivityTable rows={activity} getEventStyle={getEventStyle} getEventLabel={getEventLabel} account={account} navigate={navigate} short={short} />
+              <ActivityTable rows={activity} getEventStyle={getEventStyle} getEventLabel={getEventLabel} account={account} navigate={navigate} short={short} onOpenActivity={setSelectedActivity} />
             )}
           </div>
         </div>
@@ -403,7 +431,7 @@ const DetailRow = ({ icon, label, value, onClick }) => (
   </div>
 );
 
-const ActivityTable = ({ rows, getEventStyle, getEventLabel, account, navigate, short }) => (
+const ActivityTable = ({ rows, getEventStyle, getEventLabel, account, navigate, short, onOpenActivity }) => (
   <div className="bg-white rounded-[2rem] border border-gray-100 shadow-sm overflow-hidden">
     <div className="max-h-[380px] overflow-y-auto">
       <table className="w-full text-left border-collapse">
@@ -422,7 +450,7 @@ const ActivityTable = ({ rows, getEventStyle, getEventLabel, account, navigate, 
           ) : rows.map((log) => {
             const style = getEventStyle(log.type);
             return (
-              <tr key={`${log.hash}-${log.logIndex}`} className="border-b border-gray-50 hover:bg-purple-50/30">
+              <tr key={`${log.hash}-${log.logIndex}`} onClick={() => onOpenActivity(log)} className="border-b border-gray-50 hover:bg-purple-50/30 cursor-pointer">
                 <td className="p-6"><div className={`flex items-center gap-2 font-bold text-sm ${style.color}`}>{style.icon} {getEventLabel(log.type)}</div></td>
                 <td className="p-6 font-mono text-sm font-black text-gray-900">{log.price !== "-" ? `${log.price} ETH` : <span className="text-gray-300">-</span>}</td>
                 <td className="p-6 font-mono text-sm">{renderAddress(log.from, account, navigate, short)}</td>
@@ -440,5 +468,5 @@ const ActivityTable = ({ rows, getEventStyle, getEventLabel, account, navigate, 
 function renderAddress(address, account, navigate, short) {
   if (!address || address === ZERO) return <span className="text-gray-400">-</span>;
   if (account && address.toLowerCase() === account.toLowerCase()) return <span className="bg-gray-900 text-white font-bold px-2 py-1 rounded text-[10px]">BẠN</span>;
-  return <span onClick={() => navigate(`/profile/${address}`)} className="text-blue-600 hover:underline cursor-pointer">{short(address)}</span>;
+  return <span onClick={(event) => { event.stopPropagation(); navigate(`/profile/${address}`); }} className="text-blue-600 hover:underline cursor-pointer">{short(address)}</span>;
 }

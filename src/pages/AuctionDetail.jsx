@@ -23,6 +23,8 @@ import {
   X
 } from "lucide-react";
 import { useWeb3 } from "../context/Web3Context";
+import { AUCTION_ADDRESS, NFT_ADDRESS } from "../constants";
+import ActivityDetailModal from "../components/ActivityDetailModal";
 
 const ZERO = ethers.constants.AddressZero;
 const PLACEHOLDER_IMAGE = "https://picsum.photos/seed/ethervault/800";
@@ -39,6 +41,7 @@ export default function AuctionDetail() {
   const [timeLeft, setTimeLeft] = useState({ h: 0, m: 0, s: 0, ended: false });
   const [bidHistory, setBidHistory] = useState([]);
   const [activity, setActivity] = useState([]);
+  const [selectedActivity, setSelectedActivity] = useState(null);
   const [dialog, setDialog] = useState({ isOpen: false, type: "success", title: "", message: "" });
 
   const showDialog = (type, title, message) => setDialog({ isOpen: true, type, title, message });
@@ -114,6 +117,11 @@ export default function AuctionDetail() {
       ]);
 
       const metadata = await fetchMetadata(tokenURI);
+      const activityItem = {
+        id: tokenId.toString(),
+        name: metadata.name || `NFT #${tokenId.toString()}`,
+        img: metadata.thumbnail || metadata.image || metadata.asset || PLACEHOLDER_IMAGE
+      };
       const creatorLog = transferLogs.find((log) => log.args.from === ZERO);
       const creator = creatorLog?.args.to || metadata.creator || ZERO;
 
@@ -158,6 +166,10 @@ export default function AuctionDetail() {
         else if (auction && sameAddress(from, auction.address)) type = status === "sold" ? "NFT về winner" : "NFT trả seller";
 
         return {
+          id: `${log.transactionHash}-${log.logIndex}`,
+          transactionHash: log.transactionHash,
+          contractAddress: NFT_ADDRESS,
+          item: activityItem,
           type,
           from,
           to,
@@ -180,6 +192,10 @@ export default function AuctionDetail() {
         const to = type === "AuctionCompleted" ? log.args.winner : type === "BidPlaced" ? auction.address : from;
 
         return {
+          id: `${log.transactionHash}-${log.logIndex}`,
+          transactionHash: log.transactionHash,
+          contractAddress: AUCTION_ADDRESS,
+          item: activityItem,
           type,
           from,
           to,
@@ -420,6 +436,19 @@ export default function AuctionDetail() {
         </div>
       )}
 
+      {selectedActivity && (
+        <ActivityDetailModal
+          activity={selectedActivity}
+          account={account}
+          profileAddress={data?.seller}
+          getEventLabel={eventLabel}
+          getEventStyle={eventStyle}
+          short={short}
+          navigate={navigate}
+          onClose={() => setSelectedActivity(null)}
+        />
+      )}
+
       <button onClick={() => navigate("/auction")} className="flex items-center gap-2 font-bold text-gray-500 hover:text-black mb-8">
         <ArrowLeft size={20} /> Quay lại sàn
       </button>
@@ -567,7 +596,7 @@ export default function AuctionDetail() {
               ) : activity.map((log) => {
                 const style = eventStyle(log.type);
                 return (
-                  <tr key={`${log.blockNumber}-${log.logIndex}-${log.type}`} className="border-b border-gray-50 hover:bg-orange-50/30">
+                  <tr key={`${log.blockNumber}-${log.logIndex}-${log.type}`} onClick={() => setSelectedActivity(log)} className="border-b border-gray-50 hover:bg-orange-50/30 cursor-pointer">
                     <td className="p-8"><div className={`flex items-center gap-3 font-bold text-sm ${style.color}`}>{style.icon} {eventLabel(log.type)}</div></td>
                     <td className="p-8 font-mono text-sm font-black text-gray-900">{log.price !== "-" ? `${log.price} ETH` : <span className="text-gray-300">-</span>}</td>
                     <td className="p-8 font-mono text-sm">{renderAddress(log.from, account, navigate, short)}</td>
@@ -587,7 +616,7 @@ export default function AuctionDetail() {
 function renderAddress(address, account, navigate, short) {
   if (!address || address === ZERO) return <span className="text-gray-400">-</span>;
   if (account && address.toLowerCase() === account.toLowerCase()) return <span className="bg-gray-900 text-white font-bold px-2 py-1 rounded text-[10px]">BẠN</span>;
-  return <span onClick={() => navigate(`/profile/${address}`)} className="text-blue-600 hover:underline cursor-pointer">{short(address)}</span>;
+  return <span onClick={(event) => { event.stopPropagation(); navigate(`/profile/${address}`); }} className="text-blue-600 hover:underline cursor-pointer">{short(address)}</span>;
 }
 
 const InfoPanel = ({ title, icon, children }) => (
