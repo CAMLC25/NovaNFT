@@ -23,6 +23,15 @@ const normalizeTimestamp = (timestamp) => {
   return value > 1000000000000 ? value : value * 1000;
 };
 
+const getTechnicalFlow = (type) => {
+  if (type === "BidPlaced") return "Bidder -> Hợp đồng đấu giá escrow ETH";
+  if (type === "AuctionCompleted" || type === "AuctionWon") return "Hợp đồng đấu giá -> Bank balance của người bán";
+  if (type === "NFTSold" || type === "NFTBought") return "Marketplace -> Bank balance của người bán";
+  if (type === "BalanceCredited") return "Contract được ủy quyền -> Bank balance";
+  if (type === "Withdrawn") return "Bank -> Ví người dùng";
+  return "";
+};
+
 export default function ActivityDetailModal({
   activity,
   account,
@@ -45,6 +54,7 @@ export default function ActivityDetailModal({
   const contractAddress = activity.contractAddress || "-";
   const timestamp = normalizeTimestamp(activity.timestamp);
   const sign = style.sign || "";
+  const technicalFlow = getTechnicalFlow(activity.type);
 
   const copy = async (value, key) => {
     if (!value || value === "-") return;
@@ -99,6 +109,7 @@ export default function ActivityDetailModal({
             <DetailLine label="Log index" value={activity.logIndex ?? "-"} />
             <DetailLine label="Thời gian" value={new Date(timestamp).toLocaleString("vi-VN")} />
             <DetailLine label="Contract phát event" value={getContractLabel(contractAddress)} />
+            {technicalFlow && <DetailLine label="Luồng kỹ thuật" value={technicalFlow} />}
           </div>
 
           <div className="space-y-3">

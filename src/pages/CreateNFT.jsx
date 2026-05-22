@@ -83,13 +83,12 @@ export default function CreateNFT() {
       if (saleType === "auction") {
         if (!endTime) return showDialog("error", "Lỗi thời gian", "Vui lòng chọn thời gian kết thúc đấu giá!");
         const nowSec = Math.floor(Date.now() / 1000);
-        const minStartSec = nowSec + 60;
-        const startSec = startTime ? Math.floor(new Date(startTime).getTime() / 1000) : minStartSec;
+        const startSec = startTime ? Math.floor(new Date(startTime).getTime() / 1000) : 0;
         const endSec = Math.floor(new Date(endTime).getTime() / 1000);
 
         if (Number.isNaN(startSec) || Number.isNaN(endSec)) return showDialog("error", "Lỗi thời gian", "Thời gian đấu giá không hợp lệ.");
-        if (startTime && startSec < minStartSec) return showDialog("error", "Lỗi thời gian", "Thời gian bắt đầu phải sau hiện tại ít nhất 1 phút.");
-        if (endSec <= startSec) return showDialog("error", "Lỗi thời gian", "Thời gian kết thúc phải diễn ra sau thời gian bắt đầu!");
+        if (startTime && startSec < nowSec) return showDialog("error", "Lỗi thời gian", "Thời gian bắt đầu không được trước hiện tại.");
+        if (endSec <= (startTime ? startSec : nowSec)) return showDialog("error", "Lỗi thời gian", "Thời gian kết thúc phải diễn ra sau thời gian bắt đầu!");
 
         startTimestamp = startSec;
         endTimestamp = endSec;

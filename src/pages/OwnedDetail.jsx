@@ -196,12 +196,11 @@ export default function OwnedDetail() {
     if (!auction) return showDialog("error", "Lỗi hệ thống", "Hợp đồng đấu giá chưa sẵn sàng.");
     if (!endDate) return showDialog("error", "Lỗi nhập liệu", "Chọn thời gian kết thúc.");
     const now = Math.floor(Date.now() / 1000);
-    const minStart = now + 60;
-    const startTimestamp = startDate ? Math.floor(new Date(startDate).getTime() / 1000) : minStart;
+    const startTimestamp = startDate ? Math.floor(new Date(startDate).getTime() / 1000) : 0;
     const endTimestamp = Math.floor(new Date(endDate).getTime() / 1000);
     if (Number.isNaN(startTimestamp) || Number.isNaN(endTimestamp)) return showDialog("error", "Lỗi", "Thời gian đấu giá không hợp lệ.");
-    if (startDate && startTimestamp < minStart) return showDialog("error", "Lỗi", "Bắt đầu phải sau hiện tại ít nhất 1 phút.");
-    if (endTimestamp <= startTimestamp) return showDialog("error", "Lỗi", "Kết thúc phải sau Bắt đầu.");
+    if (startDate && startTimestamp < now) return showDialog("error", "Lỗi", "Bắt đầu không được trước hiện tại.");
+    if (endTimestamp <= (startDate ? startTimestamp : now)) return showDialog("error", "Lỗi", "Kết thúc phải sau Bắt đầu.");
 
     try {
       setProcessing(true);

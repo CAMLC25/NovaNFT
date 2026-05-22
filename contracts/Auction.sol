@@ -67,9 +67,12 @@ contract AuctionMarket is ReentrancyGuard {
                 nft.isApprovedForAll(msg.sender, address(this)),
             "Auction not approved"
         );
-        require(_endTime > _startTime, "Invalid auction time");
         require(_endTime > block.timestamp, "End time must be in future");
-        require(_startTime >= block.timestamp, "Start time must be now or future");
+        uint256 normalizedStartTime = _startTime;
+        if (normalizedStartTime == 0 || normalizedStartTime < block.timestamp) {
+            normalizedStartTime = block.timestamp;
+        }
+        require(_endTime > normalizedStartTime, "Invalid auction time");
 
         nft.transferFrom(msg.sender, address(this), _tokenId);
 
@@ -77,7 +80,7 @@ contract AuctionMarket is ReentrancyGuard {
             tokenId: _tokenId,
             seller: msg.sender,
             minPrice: _minPrice,
-            startTime: _startTime,
+            startTime: normalizedStartTime,
             endTime: _endTime,
             highestBidder: address(0),
             highestBid: 0,
@@ -86,7 +89,7 @@ contract AuctionMarket is ReentrancyGuard {
 
         auctionTokenIds.push(_tokenId);
 
-        emit AuctionStarted(_tokenId, msg.sender, _minPrice, _startTime, _endTime);
+        emit AuctionStarted(_tokenId, msg.sender, _minPrice, normalizedStartTime, _endTime);
     }
 
     function placeBid(uint256 _tokenId) external payable nonReentrant {

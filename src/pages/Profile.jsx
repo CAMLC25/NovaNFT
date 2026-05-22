@@ -153,7 +153,7 @@ export default function Profile() {
   };
 
   const getActivityContractAddress = (type) => {
-    if (["Mint"].includes(type)) return NFT_ADDRESS;
+    if (["Mint", "NFTSent", "NFTReceived"].includes(type)) return NFT_ADDRESS;
     if (["NFTListed", "NFTBought", "NFTSold", "ListingCanceled"].includes(type)) return MARKETPLACE_ADDRESS;
     if (["AuctionStarted", "BidPlaced", "AuctionCanceled", "AuctionCompleted", "AuctionWon", "AuctionEndedNoBid"].includes(type)) return AUCTION_ADDRESS;
     if (["BalanceCredited", "Withdrawn", "TransferETH", "TransferETHSent", "TransferETHReceived"].includes(type)) return BANK_ADDRESS;
@@ -259,8 +259,10 @@ export default function Profile() {
         .slice(0, 100);
     }
 
-    const [mintLogs, listedLogs, soldLogs, listingCanceledLogs, auctionStartedLogs, bidLogs, auctionCanceledLogs, auctionCompletedLogs, noBidLogs, creditedLogs, withdrawnLogs, transferSentLogs, transferReceivedLogs] = await Promise.all([
+    const [mintLogs, nftTransferSentLogs, nftTransferReceivedLogs, listedLogs, soldLogs, listingCanceledLogs, auctionStartedLogs, bidLogs, auctionCanceledLogs, auctionCompletedLogs, noBidLogs, creditedLogs, withdrawnLogs, transferSentLogs, transferReceivedLogs] = await Promise.all([
       nft.queryFilter(nft.filters.NFTMinted(null, profileAddress)),
+      nft.queryFilter(nft.filters.Transfer(profileAddress)),
+      nft.queryFilter(nft.filters.Transfer(null, profileAddress)),
       market.queryFilter(market.filters.NFTListed(null, profileAddress)),
       market.queryFilter(market.filters.NFTSold(null, null, profileAddress)),
       market.queryFilter(market.filters.ListingCanceled(null, profileAddress)),
@@ -277,18 +279,29 @@ export default function Profile() {
 
     const soldAsSellerLogs = await market.queryFilter(market.filters.NFTSold(null, profileAddress));
     const completedAsSellerLogs = await auction.queryFilter(auction.filters.AuctionCompleted(null, profileAddress));
+    const directNftTransferLogs = [...nftTransferSentLogs, ...nftTransferReceivedLogs]
+      .filter((log, index, rows) => rows.findIndex((row) => row.transactionHash === log.transactionHash && row.logIndex === log.logIndex) === index)
+      .filter((log) => {
+        const from = log.args.from;
+        const to = log.args.to;
+        if (from === ZERO) return false;
+        if (sameAddress(from, MARKETPLACE_ADDRESS) || sameAddress(to, MARKETPLACE_ADDRESS)) return false;
+        if (sameAddress(from, AUCTION_ADDRESS) || sameAddress(to, AUCTION_ADDRESS)) return false;
+        return sameAddress(from, profileAddress) || sameAddress(to, profileAddress);
+      });
 
     const nftEventRows = [
       ...mintLogs.map((log) => ({ log, type: "Mint", tokenId: log.args.tokenId, price: "-", from: ZERO, to: log.args.creator })),
+      ...directNftTransferLogs.map((log) => ({ log, type: sameAddress(log.args.from, profileAddress) ? "NFTSent" : "NFTReceived", tokenId: log.args.tokenId, price: "-", from: log.args.from, to: log.args.to })),
       ...listedLogs.map((log) => ({ log, type: "NFTListed", tokenId: log.args.tokenId, price: ethers.utils.formatEther(log.args.price), from: log.args.seller, to: MARKETPLACE_ADDRESS })),
-      ...soldLogs.map((log) => ({ log, type: "NFTBought", tokenId: log.args.tokenId, price: ethers.utils.formatEther(log.args.price), from: log.args.buyer, to: log.args.seller })),
-      ...soldAsSellerLogs.map((log) => ({ log, type: "NFTSold", tokenId: log.args.tokenId, price: ethers.utils.formatEther(log.args.price), from: log.args.buyer, to: log.args.seller })),
+      ...soldLogs.map((log) => ({ log, type: "NFTBought", tokenId: log.args.tokenId, price: ethers.utils.formatEther(log.args.price), from: log.args.seller, to: log.args.buyer })),
+      ...soldAsSellerLogs.map((log) => ({ log, type: "NFTSold", tokenId: log.args.tokenId, price: ethers.utils.formatEther(log.args.price), from: log.args.seller, to: log.args.buyer })),
       ...listingCanceledLogs.map((log) => ({ log, type: "ListingCanceled", tokenId: log.args.tokenId, price: "-", from: MARKETPLACE_ADDRESS, to: log.args.seller })),
       ...auctionStartedLogs.map((log) => ({ log, type: "AuctionStarted", tokenId: log.args.tokenId, price: ethers.utils.formatEther(log.args.minPrice), from: log.args.seller, to: AUCTION_ADDRESS })),
       ...bidLogs.map((log) => ({ log, type: "BidPlaced", tokenId: log.args.tokenId, price: ethers.utils.formatEther(log.args.amount), from: log.args.bidder, to: AUCTION_ADDRESS })),
       ...auctionCanceledLogs.map((log) => ({ log, type: "AuctionCanceled", tokenId: log.args.tokenId, price: "-", from: AUCTION_ADDRESS, to: log.args.seller })),
-      ...auctionCompletedLogs.map((log) => ({ log, type: "AuctionWon", tokenId: log.args.tokenId, price: ethers.utils.formatEther(log.args.amount), from: log.args.winner, to: log.args.seller })),
-      ...completedAsSellerLogs.map((log) => ({ log, type: "AuctionCompleted", tokenId: log.args.tokenId, price: ethers.utils.formatEther(log.args.amount), from: log.args.winner, to: log.args.seller })),
+      ...auctionCompletedLogs.map((log) => ({ log, type: "AuctionWon", tokenId: log.args.tokenId, price: ethers.utils.formatEther(log.args.amount), from: log.args.seller, to: log.args.winner })),
+      ...completedAsSellerLogs.map((log) => ({ log, type: "AuctionCompleted", tokenId: log.args.tokenId, price: ethers.utils.formatEther(log.args.amount), from: log.args.seller, to: log.args.winner })),
       ...noBidLogs.map((log) => ({ log, type: "AuctionEndedNoBid", tokenId: log.args.tokenId, price: "-", from: AUCTION_ADDRESS, to: log.args.seller }))
     ];
 
@@ -440,13 +453,15 @@ export default function Profile() {
       case "Mint": return { color: "text-yellow-500", icon: <Sparkles size={16} />, sign: "" };
       case "NFTBought":
       case "BidPlaced":
+      case "NFTSent":
       case "TransferETHSent": return { color: "text-red-500", icon: <ArrowUpRight size={16} />, sign: "-" };
       case "NFTSold":
+      case "NFTReceived":
       case "AuctionCompleted":
       case "BalanceCredited":
       case "TransferETHReceived": return { color: "text-green-600", icon: <ArrowDownLeft size={16} />, sign: "+" };
       case "TransferETH": return { color: "text-blue-600", icon: <ArrowUpRight size={16} />, sign: "" };
-      case "AuctionWon": return { color: "text-green-600", icon: <Trophy size={16} />, sign: "-" };
+      case "AuctionWon": return { color: "text-green-600", icon: <Trophy size={16} />, sign: "" };
       case "Withdrawn": return { color: "text-blue-600", icon: <Wallet size={16} />, sign: "" };
       case "ListingCanceled":
       case "AuctionCanceled":
@@ -463,6 +478,8 @@ export default function Profile() {
       case "NFTListed": return "Niêm yết";
       case "NFTBought": return "Mua NFT";
       case "NFTSold": return "Bán NFT";
+      case "NFTSent": return "Tặng NFT";
+      case "NFTReceived": return "Nhận NFT";
       case "ListingCanceled": return "Hủy niêm yết";
       case "AuctionStarted": return "Mở đấu giá";
       case "BidPlaced": return "Đặt giá";

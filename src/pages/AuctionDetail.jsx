@@ -42,6 +42,7 @@ export default function AuctionDetail() {
   const [bidHistory, setBidHistory] = useState([]);
   const [activity, setActivity] = useState([]);
   const [selectedActivity, setSelectedActivity] = useState(null);
+  const [chainClock, setChainClock] = useState(null);
   const [dialog, setDialog] = useState({ isOpen: false, type: "success", title: "", message: "" });
 
   const showDialog = (type, title, message) => setDialog({ isOpen: true, type, title, message });
@@ -64,6 +65,19 @@ export default function AuctionDetail() {
   const generateGradient = (address) => {
     if (!address || address === ZERO) return "linear-gradient(135deg, #e5e7eb, #f3f4f6)";
     return `linear-gradient(135deg, #${address.slice(2, 8)}, #${address.slice(-6)})`;
+  };
+
+  const getEstimatedChainNow = () => {
+    if (!chainClock) return Math.floor(Date.now() / 1000);
+    return chainClock.blockTime + Math.floor((Date.now() - chainClock.syncedAt) / 1000);
+  };
+
+  const syncChainClock = async () => {
+    if (!auction?.provider) return getEstimatedChainNow();
+    const latestBlock = await auction.provider.getBlock("latest");
+    const monotonicTime = Math.max(latestBlock.timestamp, getEstimatedChainNow());
+    setChainClock({ blockTime: monotonicTime, syncedAt: Date.now() });
+    return monotonicTime;
   };
 
   const getStatusText = (status) => {
@@ -117,6 +131,7 @@ export default function AuctionDetail() {
       ]);
 
       const metadata = await fetchMetadata(tokenURI);
+      const chainNow = await syncChainClock();
       const activityItem = {
         id: tokenId.toString(),
         name: metadata.name || `NFT #${tokenId.toString()}`,
@@ -148,9 +163,9 @@ export default function AuctionDetail() {
         else if (lastCanceled) status = "canceled";
         else if (lastNoBid) status = "unsold";
         else status = auctionData.highestBid.isZero() ? "unsold" : "sold";
-      } else if (Math.floor(Date.now() / 1000) < auctionData.startTime.toNumber()) {
+      } else if (chainNow < auctionData.startTime.toNumber()) {
         status = "not_started";
-      } else if (Math.floor(Date.now() / 1000) >= auctionData.endTime.toNumber()) {
+      } else if (chainNow >= auctionData.endTime.toNumber()) {
         status = "awaiting_close";
       }
 
@@ -247,7 +262,7 @@ export default function AuctionDetail() {
     if (!data?.endTime || !data?.startTime) return;
 
     const calculate = () => {
-      const now = Math.floor(Date.now() / 1000);
+      const now = getEstimatedChainNow();
       const targetTime = now < data.startTime ? data.startTime : data.endTime;
       const distance = targetTime - now;
       if (distance <= 0) return { h: 0, m: 0, s: 0, ended: true };
@@ -262,7 +277,7 @@ export default function AuctionDetail() {
     setTimeLeft(calculate());
     const interval = setInterval(() => setTimeLeft(calculate()), 1000);
     return () => clearInterval(interval);
-  }, [data?.startTime, data?.endTime]);
+  }, [data?.startTime, data?.endTime, chainClock]);
 
   const validateBidAmount = () => {
     if (!bidAmount || Number.isNaN(Number(bidAmount)) || Number(bidAmount) <= 0) {
@@ -284,7 +299,7 @@ export default function AuctionDetail() {
       if (!account) return showDialog("error", "Chưa kết nối ví", "Vui lòng kết nối MetaMask.");
       if (!auction || !data) return showDialog("error", "Hợp đồng chưa sẵn sàng", "Vui lòng thử lại sau.");
       if (sameAddress(account, data.seller)) return showDialog("error", "Không thể đặt giá", "Chủ phiên không thể đặt giá NFT của mình.");
-      const now = Math.floor(Date.now() / 1000);
+      const now = getEstimatedChainNow();
       if (now < data.startTime) return showDialog("error", "Chưa thể đặt giá", "Phiên đấu giá chưa bắt đầu. Vui lòng chờ đến thời gian mở đấu giá.");
       if (!data.active || now >= data.endTime) return showDialog("error", "Không thể đặt giá", "Phiên đấu giá không còn nhận giá đặt.");
 
@@ -311,7 +326,6 @@ export default function AuctionDetail() {
     try {
       if (!account) return showDialog("error", "Chưa kết nối ví", "Vui lòng kết nối MetaMask.");
       if (!auction || !data) return showDialog("error", "Hợp đồng chưa sẵn sàng", "Vui lòng thử lại sau.");
-
       setProcessing(true);
       showDialog("info", "Đang xử lý", "Vui lòng xác nhận hủy đấu giá trong MetaMask.");
       const tx = await auction.cancelAuction(tokenId);
@@ -330,10 +344,14 @@ export default function AuctionDetail() {
     try {
       if (!account) return showDialog("error", "Chưa kết nối ví", "Vui lòng kết nối MetaMask.");
       if (!auction || !data) return showDialog("error", "Hợp đồng chưa sẵn sàng", "Vui lòng thử lại sau.");
+      const chainNow = await syncChainClock();
+      if (chainNow < data.endTime) {
+        return showDialog("error", "Chưa thể chốt phiên", `Vui lòng chờ thêm khoảng ${data.endTime - chainNow} giây.`);
+      }
 
       setProcessing(true);
       showDialog("info", "Đang chốt thầu", "Vui lòng xác nhận giao dịch completeAuction trong MetaMask.");
-      const tx = await auction.completeAuction(tokenId);
+      const tx = await auction.completeAuction(tokenId, { gasLimit: 300000 });
       await tx.wait();
       showDialog("success", "Đã chốt phiên", "Phiên đấu giá đã được hoàn tất.");
       await fetchDetail();
@@ -406,7 +424,7 @@ export default function AuctionDetail() {
     );
   }
 
-  const nowSec = Math.floor(Date.now() / 1000);
+  const nowSec = getEstimatedChainNow();
   const displayStatus = data.active && nowSec < data.startTime ? "not_started" : data.active && nowSec >= data.endTime ? "awaiting_close" : data.status;
   const canCancel = data.active && sameAddress(data.seller, account) && data.highestBidBN.isZero() && ["active", "not_started"].includes(displayStatus);
   const canBid = data.active && !sameAddress(data.seller, account) && displayStatus === "active";
